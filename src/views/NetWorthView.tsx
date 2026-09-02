@@ -1,0 +1,240 @@
+import React from 'react';
+import { useFinance } from '../context/FinanceContext';
+import { formatMoney } from '../utils/format';
+import { DynamicIcon } from '../components/DynamicIcon';
+import { Account, AccountType } from '../types/finance';
+import { 
+  Landmark, Plus, TrendingUp, ShieldAlert, ArrowUpRight, 
+  CreditCard, PiggyBank, Banknote, Coins, Calculator, 
+  Edit3, ArrowRightLeft 
+} from 'lucide-react';
+
+interface NetWorthViewProps {
+  onOpenAccountModal: (account?: Account) => void;
+  onOpenNewTransaction: () => void;
+  onOpenCompoundSimulator: () => void;
+}
+
+export const NetWorthView: React.FC<NetWorthViewProps> = ({
+  onOpenAccountModal,
+  onOpenNewTransaction,
+  onOpenCompoundSimulator,
+}) => {
+  const { accounts, metrics, currency } = useFinance();
+
+  const assetAccounts = accounts.filter(a => a.balance >= 0);
+  const liabilityAccounts = accounts.filter(a => a.balance < 0 || a.type === 'credit' || a.type === 'debt');
+
+  // Distribución por tipo de cuenta
+  const typeLabels: Record<AccountType, string> = {
+    checking: 'Cuentas Corrientes / Nómina',
+    savings: 'Cuentas de Ahorro',
+    investment: 'Inversiones & Fondos',
+    credit: 'Tarjetas de Crédito',
+    cash: 'Efectivo',
+    crypto: 'Criptomonedas',
+    debt: 'Deudas / Préstamos',
+  };
+
+  return (
+    <div className="space-y-6 pb-12">
+      
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+            Patrimonio y Cuentas
+          </h1>
+          <p className="text-sm text-slate-500 font-medium">
+            Balance general de activos, ahorros, inversiones y pasivos
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenCompoundSimulator}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs sm:text-sm font-semibold transition-colors"
+          >
+            <Calculator className="w-4 h-4" />
+            <span>Simulador de Interés</span>
+          </button>
+
+          <button
+            onClick={() => onOpenAccountModal()}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nueva Cuenta</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Banner Principal de Patrimonio Neto */}
+      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 sm:p-8 rounded-3xl shadow-xl shadow-slate-900/10 relative overflow-hidden">
+        
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              Patrimonio Neto Total
+            </span>
+            <div className="text-3xl sm:text-4xl font-black font-mono-num tracking-tight mt-1 text-white">
+              {formatMoney(metrics.totalNetWorth, currency)}
+            </div>
+            <p className="text-xs text-slate-400 mt-1 font-medium">
+              Suma de activos financieros menos deudas y saldos en tarjeta
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4 sm:gap-6 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10">
+            <div>
+              <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
+                Total Activos
+              </span>
+              <span className="text-lg sm:text-xl font-bold font-mono-num text-emerald-300">
+                +{formatMoney(metrics.totalAssets, currency)}
+              </span>
+            </div>
+
+            <div className="w-px h-10 bg-white/20" />
+
+            <div>
+              <span className="text-[11px] font-bold text-red-400 uppercase tracking-wider block">
+                Total Pasivos / Deudas
+              </span>
+              <span className="text-lg sm:text-xl font-bold font-mono-num text-red-300">
+                -{formatMoney(metrics.totalLiabilities, currency)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Decorative background glow */}
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      </div>
+
+      {/* Listado de Cuentas: Activos y Pasivos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Activos (Cuentas con saldo positivo) */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span>Activos ({assetAccounts.length})</span>
+            </h3>
+            <span className="text-sm font-bold text-emerald-600 font-mono-num">
+              {formatMoney(metrics.totalAssets, currency)}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {assetAccounts.map((acc) => (
+              <div
+                key={acc.id}
+                className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex items-center justify-between group"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div
+                    className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm"
+                    style={{ backgroundColor: acc.color }}
+                  >
+                    <DynamicIcon name={acc.icon} size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-slate-900 leading-snug">{acc.name}</h4>
+                      {acc.institution && (
+                        <span className="text-[10px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.2 rounded">
+                          {acc.institution}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 capitalize">{typeLabels[acc.type] || acc.type}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-base font-bold text-slate-900 font-mono-num">
+                    {formatMoney(acc.balance, currency)}
+                  </span>
+                  <button
+                    onClick={() => onOpenAccountModal(acc)}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
+                    title="Editar cuenta"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Pasivos y Tarjetas de Crédito */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+              <span>Pasivos y Tarjetas ({liabilityAccounts.length})</span>
+            </h3>
+            <span className="text-sm font-bold text-red-600 font-mono-num">
+              -{formatMoney(metrics.totalLiabilities, currency)}
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {liabilityAccounts.length === 0 ? (
+              <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center">
+                <p className="text-xs font-semibold text-slate-500">No tienes deudas registradas ni saldos pendientes</p>
+              </div>
+            ) : (
+              liabilityAccounts.map((acc) => (
+                <div
+                  key={acc.id}
+                  className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div
+                      className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-sm"
+                      style={{ backgroundColor: acc.color }}
+                    >
+                      <DynamicIcon name={acc.icon} size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-sm text-slate-900 leading-snug">{acc.name}</h4>
+                        {acc.institution && (
+                          <span className="text-[10px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.2 rounded">
+                            {acc.institution}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        {acc.creditLimit ? `Límite: ${formatMoney(acc.creditLimit, currency)}` : typeLabels[acc.type]}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-base font-bold text-red-600 font-mono-num">
+                      {formatMoney(acc.balance, currency)}
+                    </span>
+                    <button
+                      onClick={() => onOpenAccountModal(acc)}
+                      className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
+                      title="Editar cuenta"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  );
+};

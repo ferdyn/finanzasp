@@ -1,0 +1,6 @@
+{
+  "name": "FinanTrack - Finanzas Personales",
+  "description": "Gestor integral de finanzas personales, presupuestos mensuales, registro de movimientos, patrimonio neto, metas de ahorro y análisis financiero.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
