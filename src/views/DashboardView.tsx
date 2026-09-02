@@ -5,7 +5,7 @@ import { DynamicIcon } from '../components/DynamicIcon';
 import { 
   TrendingDown, TrendingUp, Wallet, ArrowUpRight, ArrowDownRight, 
   PiggyBank, ShieldCheck, AlertTriangle, CheckCircle2, 
-  ChevronRight, Plus, Sparkles, PieChart, CreditCard, Target
+  ChevronRight, Plus, Sparkles, PieChart, CreditCard, Target, Zap
 } from 'lucide-react';
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
@@ -30,7 +30,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     categories, 
     transactions,
     getCategoryById, 
-    getCategorySpendForPeriod 
+    getCategorySpendForPeriod,
+    extremeSavingsMode,
+    extremeSavingsAnalysis
   } = useFinance();
 
   const currentTxs = transactions
@@ -104,11 +106,105 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* Banner de Modo de Ahorro Extremo */}
+      {extremeSavingsMode && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent dark:from-amber-950/40 dark:via-slate-900 dark:to-slate-900 border border-amber-300 dark:border-amber-700/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-amber-500/30">
+              <Zap className="w-5 h-5 fill-current" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                  Modo de Ahorro Extremo Activo
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white">
+                  EN VIGOR
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                Gastos esenciales: <strong className="text-emerald-600 dark:text-emerald-400 font-mono-num">{formatMoney(extremeSavingsAnalysis.essentialSpent, currency)}</strong> • Prescindibles: <strong className="text-amber-600 dark:text-amber-400 font-mono-num">{formatMoney(extremeSavingsAnalysis.nonEssentialSpent, currency)}</strong> • Potencial ahorro: <strong className="text-emerald-600 dark:text-emerald-400 font-mono-num">+{formatMoney(extremeSavingsAnalysis.totalPotentialMonthlySavings, currency)}/mes</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('budgets')}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/20 transition-all flex items-center gap-1.5"
+            >
+              <span>Ver Plan de Recortes</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner Principal de Resumen Financiero con el degradado adaptativo */}
+      <div className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 transition-colors">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                Balance Neto Mensual
+              </span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                metrics.currentMonthNet >= 0 
+                  ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30' 
+                  : 'bg-rose-50 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30'
+              }`}>
+                {metrics.currentMonthNet >= 0 ? 'Superávit' : 'Déficit'}
+              </span>
+            </div>
+            <div className="text-3xl sm:text-4xl font-black font-mono-num tracking-tight mt-1 text-slate-900 dark:text-white">
+              {metrics.currentMonthNet >= 0 ? '+' : ''}{formatMoney(metrics.currentMonthNet, currency)}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+              Tasa de ahorro del <strong className="text-emerald-600 dark:text-emerald-300 font-semibold">{metrics.savingsRate}%</strong> • Salud financiera de <strong className="text-slate-900 dark:text-white font-semibold">{metrics.financialHealthScore}/100</strong>
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 sm:gap-5 bg-slate-100/90 dark:bg-white/10 backdrop-blur-md p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-white/10">
+            <div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block">
+                Ingresos
+              </span>
+              <span className="text-base sm:text-xl font-bold font-mono-num text-emerald-600 dark:text-emerald-300">
+                +{formatMoney(metrics.currentMonthIncome, currency)}
+              </span>
+            </div>
+            <div className="w-px h-8 sm:h-10 bg-slate-200 dark:bg-white/20" />
+            <div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider block">
+                Gastos
+              </span>
+              <span className="text-base sm:text-xl font-bold font-mono-num text-rose-600 dark:text-rose-300">
+                -{formatMoney(metrics.currentMonthExpense, currency)}
+              </span>
+            </div>
+            <div className="w-px h-8 sm:h-10 bg-slate-200 dark:bg-white/20" />
+            <div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-slate-600 dark:text-indigo-300 uppercase tracking-wider block">
+                Patrimonio Total
+              </span>
+              <span className="text-base sm:text-xl font-bold font-mono-num text-slate-900 dark:text-white">
+                {formatMoney(metrics.totalNetWorth, currency)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Decorative background glow */}
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -left-10 -top-10 w-48 h-48 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+      </div>
+
       {/* 4 Métricas Principales */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         
         {/* Ingresos */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+        <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ingresos</span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -125,7 +221,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Gastos */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+        <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Gastos</span>
             <div className="w-8 h-8 rounded-xl bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 flex items-center justify-center">
@@ -151,7 +247,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Ahorro Neto */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+        <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ahorro Neto</span>
             <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
@@ -169,7 +265,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Tasa de Ahorro */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+        <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Tasa de Ahorro</span>
             <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center">
@@ -193,7 +289,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Cuentas y Saldo Total */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -246,7 +342,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Desglose de Gastos por Categoría */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -304,7 +400,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         {/* Estado de Presupuestos Activos */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -367,7 +463,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Fila 3: Últimos Movimientos */}
-      <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm">
+      <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h3 className="font-bold text-lg text-slate-900 dark:text-white">Últimos Movimientos</h3>
@@ -413,12 +509,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               return (
                 <div
                   key={tx.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onEditTransaction(tx.id)}
-                  className="flex items-center justify-between py-3 px-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors group"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onEditTransaction(tx.id);
+                    }
+                  }}
+                  aria-label={`Ver o editar movimiento ${tx.note || cat?.name || 'Movimiento'}, ${formatMoney(tx.amount, currency)}`}
+                  className="flex items-center justify-between py-3.5 px-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:bg-slate-100 dark:active:bg-slate-800 cursor-pointer transition-colors group min-h-[52px]"
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 group-hover:scale-105 transition-transform"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 group-hover:scale-105 transition-transform shadow-xs"
                       style={{ backgroundColor: cat?.color || '#64748b' }}
                     >
                       <DynamicIcon name={cat?.icon || 'CircleDollarSign'} size={18} />

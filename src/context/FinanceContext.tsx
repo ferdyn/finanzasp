@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Account, Budget, Category, CurrencyCode, RecurringBill, SavingsGoal, ThemeMode, Transaction } from '../types/finance';
+import { Account, AutoBudgetRule, Budget, BudgetCutSuggestion, Category, CurrencyCode, RecurringBill, SavingsGoal, ThemeMode, Transaction, TransactionTemplate } from '../types/finance';
 import { DEFAULT_CATEGORIES } from '../data/categories';
-import { INITIAL_ACCOUNTS, INITIAL_GOALS, INITIAL_RECURRING, generateSeedBudgets, generateSeedTransactions } from '../data/seedData';
+import { INITIAL_ACCOUNTS, INITIAL_GOALS, INITIAL_RECURRING, INITIAL_TEMPLATES, generateSeedBudgets, generateSeedTransactions } from '../data/seedData';
 import { getCurrentMonthPeriod } from '../utils/format';
 
 interface FinanceContextType {
@@ -10,13 +10,32 @@ interface FinanceContextType {
   accounts: Account[];
   categories: Category[];
   budgets: Budget[];
+  autoBudgetRules: AutoBudgetRule[];
   goals: SavingsGoal[];
   recurringBills: RecurringBill[];
+  templates: TransactionTemplate[];
   currency: CurrencyCode;
   selectedPeriod: string; // YYYY-MM
   theme: ThemeMode;
   effectiveTheme: 'light' | 'dark';
   
+  // Modo de Ahorro Extremo
+  extremeSavingsMode: boolean;
+  setExtremeSavingsMode: (enabled: boolean) => void;
+  toggleCategoryEssential: (categoryId: string) => void;
+  isCategoryEssential: (categoryId: string) => boolean;
+  extremeSavingsAnalysis: {
+    essentialSpent: number;
+    nonEssentialSpent: number;
+    nonEssentialBudgetTotal: number;
+    totalPotentialMonthlySavings: number;
+    suggestions: BudgetCutSuggestion[];
+    hasBudgetBackup: boolean;
+  };
+  applyAllExtremeBudgetSuggestions: () => void;
+  applyExtremeBudgetCutForCategory: (categoryId: string, newLimit: number) => void;
+  restoreBudgetsBeforeExtremeSavings: () => void;
+
   // Setters de periodo, moneda y tema
   setSelectedPeriod: (period: string) => void;
   setCurrency: (currency: CurrencyCode) => void;
@@ -26,6 +45,11 @@ interface FinanceContextType {
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   updateTransaction: (id: string, transaction: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
+
+  // Acciones de Plantillas de Transacción
+  addTemplate: (template: Omit<TransactionTemplate, 'id'>) => TransactionTemplate;
+  updateTemplate: (id: string, template: Partial<TransactionTemplate>) => void;
+  deleteTemplate: (id: string) => void;
 
   // Acciones de Cuentas
   addAccount: (account: Omit<Account, 'id'>) => void;
@@ -37,9 +61,11 @@ interface FinanceContextType {
   updateCategory: (id: string, category: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
 
-  // Acciones de Presupuesto
-  setBudget: (categoryId: string, monthlyLimit: number, alertThreshold?: number) => void;
+  // Acciones de Presupuesto y Límites Automáticos
+  setBudget: (categoryId: string, monthlyLimit: number, alertThreshold?: number, autoRenew?: boolean) => void;
   deleteBudget: (id: string) => void;
+  toggleBudgetAutoRenew: (categoryId: string) => void;
+  saveAutoBudgetRules: (rules: AutoBudgetRule[]) => void;
 
   // Acciones de Metas
   addGoal: (goal: Omit<SavingsGoal, 'id'>) => void;
@@ -89,16 +115,49 @@ const STORAGE_KEYS = {
   ACCOUNTS: 'finantrack_accounts_v2',
   CATEGORIES: 'finantrack_categories_v2',
   BUDGETS: 'finantrack_budgets_v2',
+  AUTO_BUDGET_RULES: 'finantrack_auto_budget_rules_v2',
   GOALS: 'finantrack_goals_v2',
   RECURRING: 'finantrack_recurring_v2',
+  TEMPLATES: 'finantrack_templates_v2',
   CURRENCY: 'finantrack_currency_v2',
   THEME: 'finantrack_theme_preference',
+  EXTREME_SAVINGS_MODE: 'finantrack_extreme_savings_mode',
+  BUDGETS_BACKUP_CUTS: 'finantrack_budgets_backup_cuts',
 };
+
+const DEFAULT_AUTO_BUDGET_RULES: AutoBudgetRule[] = [
+  { categoryId: 'cat-alimentacion', monthlyLimit: 400, alertThreshold: 85, enabled: true },
+  { categoryId: 'cat-vivienda', monthlyLimit: 900, alertThreshold: 90, enabled: true },
+  { categoryId: 'cat-ocio', monthlyLimit: 250, alertThreshold: 80, enabled: true },
+  { categoryId: 'cat-transporte', monthlyLimit: 150, alertThreshold: 85, enabled: true },
+  { categoryId: 'cat-servicios', monthlyLimit: 120, alertThreshold: 85, enabled: true },
+  { categoryId: 'cat-compras', monthlyLimit: 150, alertThreshold: 80, enabled: true },
+  { categoryId: 'cat-suscripciones', monthlyLimit: 45, alertThreshold: 90, enabled: true },
+  { categoryId: 'cat-salud', monthlyLimit: 80, alertThreshold: 85, enabled: true },
+];
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [selectedPeriod, setSelectedPeriod] = useState<string>(getCurrentMonthPeriod());
   const [currency, setCurrencyState] = useState<CurrencyCode>(() => {
     return (localStorage.getItem(STORAGE_KEYS.CURRENCY) as CurrencyCode) || 'EUR';
+  });
+
+  // Modo de Ahorro Extremo
+  const [extremeSavingsMode, setExtremeSavingsModeState] = useState<boolean>(() => {
+    return localStorage.getItem(STORAGE_KEYS.EXTREME_SAVINGS_MODE) === 'true';
+  });
+
+  const setExtremeSavingsMode = (enabled: boolean) => {
+    setExtremeSavingsModeState(enabled);
+    localStorage.setItem(STORAGE_KEYS.EXTREME_SAVINGS_MODE, String(enabled));
+  };
+
+  const [budgetsBackupBeforeCuts, setBudgetsBackupBeforeCuts] = useState<Budget[] | null>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.BUDGETS_BACKUP_CUTS);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return null;
   });
 
   const [theme, setThemeState] = useState<ThemeMode>(() => {
@@ -151,7 +210,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [categories, setCategories] = useState<Category[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed: Category[] = JSON.parse(saved);
+        return parsed.map(c => {
+          if (c.isEssential !== undefined) return c;
+          const def = DEFAULT_CATEGORIES.find(dc => dc.id === c.id);
+          if (def && def.isEssential !== undefined) {
+            return { ...c, isEssential: def.isEssential };
+          }
+          const lower = c.name.toLowerCase();
+          const isDefEssential = ['alimentación', 'supermercado', 'vivienda', 'alquiler', 'servicios', 'luz', 'agua', 'gas', 'transporte', 'salud', 'farmacia', 'mascota', 'impuesto', 'educación'].some(k => lower.includes(k));
+          return { ...c, isEssential: isDefEssential };
+        });
+      } catch (e) { console.error(e); }
     }
     return DEFAULT_CATEGORIES;
   });
@@ -180,6 +251,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return generateSeedBudgets();
   });
 
+  const [autoBudgetRules, setAutoBudgetRules] = useState<AutoBudgetRule[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.AUTO_BUDGET_RULES);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return DEFAULT_AUTO_BUDGET_RULES;
+  });
+
   const [goals, setGoals] = useState<SavingsGoal[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.GOALS);
     if (saved) {
@@ -195,6 +274,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     return INITIAL_RECURRING;
   });
+
+  const [templates, setTemplates] = useState<TransactionTemplate[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    }
+    return INITIAL_TEMPLATES;
+  });
+
+  // Guardar en LocalStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+  }, [templates]);
 
   // Guardar en LocalStorage
   useEffect(() => {
@@ -212,6 +304,52 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(budgets));
   }, [budgets]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.AUTO_BUDGET_RULES, JSON.stringify(autoBudgetRules));
+  }, [autoBudgetRules]);
+
+  // Reinicio y aplicación automática de límites al inicio de cada mes
+  useEffect(() => {
+    if (!selectedPeriod) return;
+
+    setBudgets(prevBudgets => {
+      let hasChanges = false;
+      const newBudgets = [...prevBudgets];
+
+      // Para cada regla automática configurada y activa
+      autoBudgetRules.forEach(rule => {
+        if (!rule.enabled || rule.monthlyLimit <= 0) return;
+
+        const existingIndex = newBudgets.findIndex(
+          b => b.categoryId === rule.categoryId && b.period === selectedPeriod
+        );
+
+        if (existingIndex === -1) {
+          // Si el mes no tiene aún presupuesto fijado, se inicializa automáticamente
+          // El gasto acumulado empezará en 0 y el disponible al 100%
+          newBudgets.push({
+            id: `bgt-auto-${rule.categoryId}-${selectedPeriod}`,
+            categoryId: rule.categoryId,
+            monthlyLimit: rule.monthlyLimit,
+            period: selectedPeriod,
+            alertThreshold: rule.alertThreshold,
+            autoRenew: true,
+            lastRenewedAt: new Date().toISOString(),
+          });
+          hasChanges = true;
+        } else if (newBudgets[existingIndex].autoRenew === undefined) {
+          newBudgets[existingIndex] = {
+            ...newBudgets[existingIndex],
+            autoRenew: true,
+          };
+          hasChanges = true;
+        }
+      });
+
+      return hasChanges ? newBudgets : prevBudgets;
+    });
+  }, [selectedPeriod, autoBudgetRules]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
@@ -355,13 +493,44 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCategories(prev => prev.filter(c => c.id !== id));
   };
 
-  // Presupuestos
-  const setBudget = (categoryId: string, monthlyLimit: number, alertThreshold: number = 85) => {
+  const isCategoryEssential = (categoryId: string): boolean => {
+    const cat = categories.find(c => c.id === categoryId);
+    if (!cat) return false;
+    if (cat.type !== 'expense') return true;
+    if (cat.isEssential !== undefined) return cat.isEssential;
+    const def = DEFAULT_CATEGORIES.find(d => d.id === categoryId);
+    if (def && def.isEssential !== undefined) return def.isEssential;
+    return false;
+  };
+
+  const toggleCategoryEssential = (categoryId: string) => {
+    setCategories(prev => prev.map(c => {
+      if (c.id === categoryId) {
+        const currentVal = c.isEssential !== undefined ? c.isEssential : false;
+        return { ...c, isEssential: !currentVal };
+      }
+      return c;
+    }));
+  };
+
+  // Presupuestos con reinicio automático mensual
+  const setBudget = (
+    categoryId: string, 
+    monthlyLimit: number, 
+    alertThreshold: number = 85,
+    autoRenew: boolean = true
+  ) => {
     setBudgets(prev => {
       const existingIndex = prev.findIndex(b => b.categoryId === categoryId && b.period === selectedPeriod);
       if (existingIndex >= 0) {
         const updated = [...prev];
-        updated[existingIndex] = { ...updated[existingIndex], monthlyLimit, alertThreshold };
+        updated[existingIndex] = { 
+          ...updated[existingIndex], 
+          monthlyLimit, 
+          alertThreshold,
+          autoRenew,
+          lastRenewedAt: new Date().toISOString(),
+        };
         return updated;
       } else {
         const newBudget: Budget = {
@@ -370,14 +539,112 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           monthlyLimit,
           period: selectedPeriod,
           alertThreshold,
+          autoRenew,
+          lastRenewedAt: new Date().toISOString(),
         };
         return [...prev, newBudget];
+      }
+    });
+
+    // Sincronizar regla de reinicio automático
+    setAutoBudgetRules(prevRules => {
+      const ruleIndex = prevRules.findIndex(r => r.categoryId === categoryId);
+      if (ruleIndex >= 0) {
+        const updated = [...prevRules];
+        updated[ruleIndex] = {
+          ...updated[ruleIndex],
+          monthlyLimit,
+          alertThreshold,
+          enabled: autoRenew,
+        };
+        return updated;
+      } else {
+        return [
+          ...prevRules,
+          { categoryId, monthlyLimit, alertThreshold, enabled: autoRenew }
+        ];
       }
     });
   };
 
   const deleteBudget = (id: string) => {
+    const budgetToDelete = budgets.find(b => b.id === id);
+    if (budgetToDelete) {
+      // También desactivar la regla automática asociada para que no se re-cree
+      setAutoBudgetRules(prevRules => 
+        prevRules.map(r => r.categoryId === budgetToDelete.categoryId ? { ...r, enabled: false } : r)
+      );
+    }
     setBudgets(prev => prev.filter(b => b.id !== id));
+  };
+
+  const toggleBudgetAutoRenew = (categoryId: string) => {
+    const currentBudget = budgets.find(b => b.categoryId === categoryId && b.period === selectedPeriod);
+    const willEnable = currentBudget ? !currentBudget.autoRenew : true;
+
+    setBudgets(prev => prev.map(b => {
+      if (b.categoryId === categoryId && b.period === selectedPeriod) {
+        return { ...b, autoRenew: willEnable };
+      }
+      return b;
+    }));
+
+    setAutoBudgetRules(prevRules => {
+      const ruleIndex = prevRules.findIndex(r => r.categoryId === categoryId);
+      if (ruleIndex >= 0) {
+        const updated = [...prevRules];
+        updated[ruleIndex] = {
+          ...updated[ruleIndex],
+          enabled: willEnable,
+          monthlyLimit: currentBudget ? currentBudget.monthlyLimit : updated[ruleIndex].monthlyLimit,
+          alertThreshold: currentBudget?.alertThreshold || updated[ruleIndex].alertThreshold,
+        };
+        return updated;
+      } else if (currentBudget) {
+        return [
+          ...prevRules,
+          {
+            categoryId,
+            monthlyLimit: currentBudget.monthlyLimit,
+            alertThreshold: currentBudget.alertThreshold || 85,
+            enabled: willEnable,
+          }
+        ];
+      }
+      return prevRules;
+    });
+  };
+
+  const saveAutoBudgetRules = (rules: AutoBudgetRule[]) => {
+    setAutoBudgetRules(rules);
+
+    // Aplicar inmediatamente al mes seleccionado
+    setBudgets(prev => {
+      const updated = [...prev];
+      rules.forEach(rule => {
+        const index = updated.findIndex(b => b.categoryId === rule.categoryId && b.period === selectedPeriod);
+        if (index >= 0) {
+          updated[index] = {
+            ...updated[index],
+            monthlyLimit: rule.monthlyLimit,
+            alertThreshold: rule.alertThreshold,
+            autoRenew: rule.enabled,
+            lastRenewedAt: new Date().toISOString(),
+          };
+        } else if (rule.enabled && rule.monthlyLimit > 0) {
+          updated.push({
+            id: `bgt-auto-${rule.categoryId}-${selectedPeriod}`,
+            categoryId: rule.categoryId,
+            monthlyLimit: rule.monthlyLimit,
+            period: selectedPeriod,
+            alertThreshold: rule.alertThreshold,
+            autoRenew: true,
+            lastRenewedAt: new Date().toISOString(),
+          });
+        }
+      });
+      return updated;
+    });
   };
 
   // Metas de Ahorro
@@ -417,6 +684,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const deleteGoal = (id: string) => {
     setGoals(prev => prev.filter(g => g.id !== id));
+  };
+
+  // Plantillas de Transacción
+  const addTemplate = (data: Omit<TransactionTemplate, 'id'>): TransactionTemplate => {
+    const newTemplate: TransactionTemplate = {
+      ...data,
+      id: `tmpl-${Date.now()}`,
+    };
+    setTemplates(prev => [newTemplate, ...prev]);
+    return newTemplate;
+  };
+
+  const updateTemplate = (id: string, updated: Partial<TransactionTemplate>) => {
+    setTemplates(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
+  };
+
+  const deleteTemplate = (id: string) => {
+    setTemplates(prev => prev.filter(t => t.id !== id));
   };
 
   // Recurrentes
@@ -467,8 +752,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCategories(DEFAULT_CATEGORIES);
     setTransactions(generateSeedTransactions());
     setBudgets(generateSeedBudgets());
+    setAutoBudgetRules(DEFAULT_AUTO_BUDGET_RULES);
     setGoals(INITIAL_GOALS);
     setRecurringBills(INITIAL_RECURRING);
+    setTemplates(INITIAL_TEMPLATES);
     setSelectedPeriod(getCurrentMonthPeriod());
   };
 
@@ -478,6 +765,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setBudgets([]);
     setGoals([]);
     setRecurringBills([]);
+    setTemplates([]);
   };
 
   const exportDataJSON = () => {
@@ -490,6 +778,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       budgets,
       goals,
       recurringBills,
+      templates,
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -538,6 +827,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (data.budgets) setBudgets(data.budgets);
         if (data.goals) setGoals(data.goals);
         if (data.recurringBills) setRecurringBills(data.recurringBills);
+        if (data.templates) setTemplates(data.templates);
         return true;
       }
       return false;
@@ -643,6 +933,149 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [accounts, transactions, selectedPeriod, budgets]);
 
+  // Análisis y Sugerencias del Modo de Ahorro Extremo
+  const extremeSavingsAnalysis = useMemo(() => {
+    const monthTxs = transactions.filter(t => t.date.startsWith(selectedPeriod) && t.type === 'expense');
+    
+    let essentialSpent = 0;
+    let nonEssentialSpent = 0;
+
+    monthTxs.forEach(tx => {
+      if (isCategoryEssential(tx.categoryId)) {
+        essentialSpent += tx.amount;
+      } else {
+        nonEssentialSpent += tx.amount;
+      }
+    });
+
+    const expenseCategories = categories.filter(c => c.type === 'expense');
+    const nonEssentialCategories = expenseCategories.filter(c => !isCategoryEssential(c.id));
+
+    let nonEssentialBudgetTotal = 0;
+    const suggestions: BudgetCutSuggestion[] = [];
+
+    nonEssentialCategories.forEach(cat => {
+      const budget = budgets.find(b => b.categoryId === cat.id && b.period === selectedPeriod);
+      const spent = getCategorySpendForPeriod(cat.id, selectedPeriod);
+      const currentLimit = budget?.monthlyLimit || 0;
+      nonEssentialBudgetTotal += currentLimit;
+
+      // Generar sugerencia si hay gasto o presupuesto activo en esta partida prescindible
+      if (currentLimit > 0 || spent > 0) {
+        let cutPercent = 60;
+        let priority: 'urgent' | 'recommended' | 'optional' = 'recommended';
+        let reason = 'Reducción en partida prescindible';
+
+        const catNameLower = cat.name.toLowerCase();
+        if (catNameLower.includes('suscrip') || catNameLower.includes('stream') || cat.id === 'cat-suscripciones') {
+          cutPercent = 80;
+          priority = 'urgent';
+          reason = 'Pausar temporalmente plataformas de streaming y suscripciones digitales no esenciales';
+        } else if (catNameLower.includes('ocio') || catNameLower.includes('restaur') || cat.id === 'cat-ocio') {
+          cutPercent = 65;
+          priority = 'urgent';
+          reason = 'Limitar salidas a restaurantes, copas, ocio nocturno y pedidos de delivery';
+        } else if (catNameLower.includes('compras') || catNameLower.includes('ropa') || cat.id === 'cat-compras') {
+          cutPercent = 70;
+          priority = 'urgent';
+          reason = 'Congelar compras discrecionales de moda, tecnología y compras impulsivas';
+        } else if (catNameLower.includes('viaje') || catNameLower.includes('vacacion') || cat.id === 'cat-viajes') {
+          cutPercent = 85;
+          priority = 'recommended';
+          reason = 'Suspender viajes recreativos, escapadas de fin de semana y ocio vacacional';
+        } else {
+          cutPercent = 50;
+          priority = 'optional';
+          reason = 'Reducir gastos secundarios y partidas varias al mínimo de contingencia';
+        }
+
+        const baseAmount = currentLimit > 0 ? currentLimit : spent;
+        const suggestedLimit = Math.max(0, Math.round((baseAmount * (100 - cutPercent)) / 100));
+        const cutAmount = Math.max(0, baseAmount - suggestedLimit);
+
+        if (cutAmount > 0) {
+          suggestions.push({
+            categoryId: cat.id,
+            categoryName: cat.name,
+            categoryColor: cat.color,
+            categoryIcon: cat.icon,
+            currentLimit,
+            currentSpent: spent,
+            suggestedLimit,
+            cutAmount,
+            cutPercent,
+            reason,
+            priority,
+          });
+        }
+      }
+    });
+
+    // Ordenar: urgentes primero, luego recomendadas, luego mayor recorte económico
+    suggestions.sort((a, b) => {
+      const priorityOrder = { urgent: 0, recommended: 1, optional: 2 };
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      }
+      return b.cutAmount - a.cutAmount;
+    });
+
+    const totalPotentialMonthlySavings = suggestions.reduce((sum, s) => sum + s.cutAmount, 0);
+
+    return {
+      essentialSpent,
+      nonEssentialSpent,
+      nonEssentialBudgetTotal,
+      totalPotentialMonthlySavings,
+      suggestions,
+      hasBudgetBackup: budgetsBackupBeforeCuts !== null && budgetsBackupBeforeCuts.length > 0,
+    };
+  }, [categories, budgets, transactions, selectedPeriod, budgetsBackupBeforeCuts]);
+
+  const applyAllExtremeBudgetSuggestions = () => {
+    const currentPeriodBudgets = budgets.filter(b => b.period === selectedPeriod);
+    setBudgetsBackupBeforeCuts(currentPeriodBudgets);
+    localStorage.setItem(STORAGE_KEYS.BUDGETS_BACKUP_CUTS, JSON.stringify(currentPeriodBudgets));
+
+    setBudgets(prev => {
+      let updated = [...prev];
+      extremeSavingsAnalysis.suggestions.forEach(sugg => {
+        const existingIdx = updated.findIndex(b => b.categoryId === sugg.categoryId && b.period === selectedPeriod);
+        if (existingIdx !== -1) {
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            monthlyLimit: sugg.suggestedLimit,
+            alertThreshold: 75,
+          };
+        } else {
+          updated.push({
+            id: `bgt-extreme-${sugg.categoryId}-${selectedPeriod}`,
+            categoryId: sugg.categoryId,
+            monthlyLimit: sugg.suggestedLimit,
+            period: selectedPeriod,
+            alertThreshold: 75,
+            autoRenew: true,
+          });
+        }
+      });
+      return updated;
+    });
+  };
+
+  const applyExtremeBudgetCutForCategory = (categoryId: string, newLimit: number) => {
+    setBudget(categoryId, newLimit, 75, true);
+  };
+
+  const restoreBudgetsBeforeExtremeSavings = () => {
+    if (!budgetsBackupBeforeCuts) return;
+    setBudgets(prev => {
+      const otherPeriods = prev.filter(b => b.period !== selectedPeriod);
+      return [...otherPeriods, ...budgetsBackupBeforeCuts];
+    });
+    setBudgetsBackupBeforeCuts(null);
+    localStorage.removeItem(STORAGE_KEYS.BUDGETS_BACKUP_CUTS);
+  };
+
   return (
     <FinanceContext.Provider
       value={{
@@ -650,18 +1083,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         accounts,
         categories,
         budgets,
+        autoBudgetRules,
         goals,
         recurringBills,
+        templates,
         currency,
         selectedPeriod,
         theme,
         effectiveTheme,
+        extremeSavingsMode,
+        setExtremeSavingsMode,
+        toggleCategoryEssential,
+        isCategoryEssential,
+        extremeSavingsAnalysis,
+        applyAllExtremeBudgetSuggestions,
+        applyExtremeBudgetCutForCategory,
+        restoreBudgetsBeforeExtremeSavings,
         setSelectedPeriod,
         setCurrency,
         setTheme,
         addTransaction,
         updateTransaction,
         deleteTransaction,
+        addTemplate,
+        updateTemplate,
+        deleteTemplate,
         addAccount,
         updateAccount,
         deleteAccount,
@@ -670,6 +1116,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         deleteCategory,
         setBudget,
         deleteBudget,
+        toggleBudgetAutoRenew,
+        saveAutoBudgetRules,
         addGoal,
         updateGoal,
         contributeToGoal,

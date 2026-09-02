@@ -77,3 +77,20 @@ export function formatMonthPeriod(period: string): string {
   const monthName = date.toLocaleDateString('es-ES', { month: 'long' });
   return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${year}`;
 }
+
+export function getNextMonthPeriod(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  if (!year || !month) return period;
+  const nextDate = new Date(year, month, 1);
+  const nextYear = nextDate.getFullYear();
+  const nextMonth = String(nextDate.getMonth() + 1).padStart(2, '0');
+  return `${nextYear}-${nextMonth}`;
+}
+
+export function getNextMonthFormatted(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  if (!year || !month) return period;
+  const nextDate = new Date(year, month, 1);
+  const monthName = nextDate.toLocaleDateString('es-ES', { month: 'long' });
+  return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${nextDate.getFullYear()}`;
+}

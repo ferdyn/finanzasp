@@ -1,4 +1,4 @@
-import { Account, Budget, RecurringBill, SavingsGoal, Transaction } from '../types/finance';
+import { Account, Budget, RecurringBill, SavingsGoal, Transaction, TransactionTemplate } from '../types/finance';
 import { getCurrentMonthPeriod } from '../utils/format';
 
 export const INITIAL_ACCOUNTS: Account[] = [
@@ -104,17 +104,7 @@ export const INITIAL_RECURRING: RecurringBill[] = [
     frequency: 'monthly',
     nextDueDate: '2026-10-01',
     isActive: true,
-  },
-  {
-    id: 'rec-internet',
-    name: 'Fibra & Móvil (O2)',
-    amount: 38,
-    type: 'expense',
-    categoryId: 'cat-servicios',
-    accountId: 'acc-main',
-    frequency: 'monthly',
-    nextDueDate: '2026-09-15',
-    isActive: true,
+    reminderDays: 7,
   },
   {
     id: 'rec-gym',
@@ -124,8 +114,33 @@ export const INITIAL_RECURRING: RecurringBill[] = [
     categoryId: 'cat-salud',
     accountId: 'acc-main',
     frequency: 'monthly',
-    nextDueDate: '2026-09-10',
+    nextDueDate: '2026-09-04',
     isActive: true,
+    reminderDays: 5,
+  },
+  {
+    id: 'rec-internet',
+    name: 'Fibra & Móvil (O2)',
+    amount: 38,
+    type: 'expense',
+    categoryId: 'cat-servicios',
+    accountId: 'acc-main',
+    frequency: 'monthly',
+    nextDueDate: '2026-09-07',
+    isActive: true,
+    reminderDays: 5,
+  },
+  {
+    id: 'rec-seguro',
+    name: 'Seguro Médico Adeslas',
+    amount: 54.00,
+    type: 'expense',
+    categoryId: 'cat-salud',
+    accountId: 'acc-main',
+    frequency: 'monthly',
+    nextDueDate: '2026-09-03',
+    isActive: true,
+    reminderDays: 5,
   },
   {
     id: 'rec-netflix',
@@ -137,6 +152,7 @@ export const INITIAL_RECURRING: RecurringBill[] = [
     frequency: 'monthly',
     nextDueDate: '2026-09-20',
     isActive: true,
+    reminderDays: 3,
   },
   {
     id: 'rec-salary',
@@ -148,6 +164,66 @@ export const INITIAL_RECURRING: RecurringBill[] = [
     frequency: 'monthly',
     nextDueDate: '2026-09-28',
     isActive: true,
+    reminderDays: 3,
+  },
+];
+
+export const INITIAL_TEMPLATES: TransactionTemplate[] = [
+  {
+    id: 'tmpl-alquiler',
+    name: 'Alquiler Mensual',
+    type: 'expense',
+    amount: 850,
+    categoryId: 'cat-vivienda',
+    accountId: 'acc-main',
+    note: 'Pago mensual de alquiler del piso',
+    tags: ['Fijo', 'Vivienda'],
+    isRecurring: true,
+  },
+  {
+    id: 'tmpl-nomina',
+    name: 'Nómina Mensual',
+    type: 'income',
+    amount: 2650,
+    categoryId: 'cat-nomina',
+    accountId: 'acc-main',
+    note: 'Ingreso nómina Tech S.L.',
+    tags: ['Nómina', 'Fijo'],
+    isRecurring: true,
+  },
+  {
+    id: 'tmpl-supermercado',
+    name: 'Compra Semanal',
+    type: 'expense',
+    amount: 85,
+    categoryId: 'cat-alimentacion',
+    accountId: 'acc-main',
+    note: 'Compra supermercado semanal',
+    tags: ['Alimentación', 'Hogar'],
+    isRecurring: false,
+  },
+  {
+    id: 'tmpl-netflix',
+    name: 'Suscripciones Streaming',
+    type: 'expense',
+    amount: 27.98,
+    categoryId: 'cat-suscripciones',
+    accountId: 'acc-credit',
+    note: 'Netflix + Spotify familiar',
+    tags: ['Streaming', 'Recurrente'],
+    isRecurring: true,
+  },
+  {
+    id: 'tmpl-traspaso-ahorro',
+    name: 'Ahorro a Fondo Reserva',
+    type: 'transfer',
+    amount: 300,
+    categoryId: 'cat-inversiones',
+    accountId: 'acc-main',
+    toAccountId: 'acc-savings',
+    note: 'Traspaso mensual a cuenta remunerada',
+    tags: ['Ahorro', 'Meta'],
+    isRecurring: true,
   },
 ];
 
@@ -393,13 +469,13 @@ export function generateSeedTransactions(): Transaction[] {
 export function generateSeedBudgets(): Budget[] {
   const currentPeriod = getCurrentMonthPeriod();
   return [
-    { id: 'bgt-1', categoryId: 'cat-alimentacion', monthlyLimit: 400, period: currentPeriod, alertThreshold: 85 },
-    { id: 'bgt-2', categoryId: 'cat-vivienda', monthlyLimit: 900, period: currentPeriod, alertThreshold: 90 },
-    { id: 'bgt-3', categoryId: 'cat-ocio', monthlyLimit: 250, period: currentPeriod, alertThreshold: 80 },
-    { id: 'bgt-4', categoryId: 'cat-transporte', monthlyLimit: 150, period: currentPeriod, alertThreshold: 85 },
-    { id: 'bgt-5', categoryId: 'cat-servicios', monthlyLimit: 120, period: currentPeriod, alertThreshold: 85 },
-    { id: 'bgt-6', categoryId: 'cat-compras', monthlyLimit: 150, period: currentPeriod, alertThreshold: 80 },
-    { id: 'bgt-7', categoryId: 'cat-suscripciones', monthlyLimit: 45, period: currentPeriod, alertThreshold: 90 },
-    { id: 'bgt-8', categoryId: 'cat-salud', monthlyLimit: 80, period: currentPeriod, alertThreshold: 85 },
+    { id: 'bgt-1', categoryId: 'cat-alimentacion', monthlyLimit: 400, period: currentPeriod, alertThreshold: 85, autoRenew: true },
+    { id: 'bgt-2', categoryId: 'cat-vivienda', monthlyLimit: 900, period: currentPeriod, alertThreshold: 90, autoRenew: true },
+    { id: 'bgt-3', categoryId: 'cat-ocio', monthlyLimit: 250, period: currentPeriod, alertThreshold: 80, autoRenew: true },
+    { id: 'bgt-4', categoryId: 'cat-transporte', monthlyLimit: 150, period: currentPeriod, alertThreshold: 85, autoRenew: true },
+    { id: 'bgt-5', categoryId: 'cat-servicios', monthlyLimit: 120, period: currentPeriod, alertThreshold: 85, autoRenew: true },
+    { id: 'bgt-6', categoryId: 'cat-compras', monthlyLimit: 150, period: currentPeriod, alertThreshold: 80, autoRenew: true },
+    { id: 'bgt-7', categoryId: 'cat-suscripciones', monthlyLimit: 45, period: currentPeriod, alertThreshold: 90, autoRenew: true },
+    { id: 'bgt-8', categoryId: 'cat-salud', monthlyLimit: 80, period: currentPeriod, alertThreshold: 85, autoRenew: true },
   ];
 }

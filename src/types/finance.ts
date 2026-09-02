@@ -9,6 +9,21 @@ export interface Category {
   color: string;
   type: 'expense' | 'income';
   isDefault?: boolean;
+  isEssential?: boolean; // Para Modo de Ahorro Extremo (Gasto básico e imprescindible)
+}
+
+export interface BudgetCutSuggestion {
+  categoryId: string;
+  categoryName: string;
+  categoryColor: string;
+  categoryIcon: string;
+  currentLimit: number;
+  currentSpent: number;
+  suggestedLimit: number;
+  cutAmount: number;
+  cutPercent: number;
+  reason: string;
+  priority: 'urgent' | 'recommended' | 'optional';
 }
 
 export interface Account {
@@ -45,6 +60,15 @@ export interface Budget {
   monthlyLimit: number;
   period: string; // YYYY-MM
   alertThreshold?: number; // % (default 85)
+  autoRenew?: boolean; // Reinicio automático mensual (se reactiva el día 1 de cada mes con contador a 0)
+  lastRenewedAt?: string; // Fecha de renovación ISO
+}
+
+export interface AutoBudgetRule {
+  categoryId: string;
+  monthlyLimit: number;
+  alertThreshold: number;
+  enabled: boolean;
 }
 
 export interface SavingsGoal {
@@ -69,6 +93,21 @@ export interface RecurringBill {
   frequency: 'weekly' | 'monthly' | 'bimonthly' | 'yearly';
   nextDueDate: string;
   isActive: boolean;
+  reminderDays?: number;
+  notes?: string;
+}
+
+export interface TransactionTemplate {
+  id: string;
+  name: string;
+  type: TransactionType;
+  amount: number;
+  categoryId: string;
+  accountId: string;
+  toAccountId?: string;
+  note?: string;
+  tags?: string[];
+  isRecurring?: boolean;
 }
 
 export type CurrencyCode = 'EUR' | 'USD' | 'MXN' | 'COP' | 'ARS' | 'CLP' | 'PEN' | 'GBP';

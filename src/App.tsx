@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
+import { SecurityProvider, useSecurity } from './context/SecurityContext';
+import { LockScreen } from './components/LockScreen';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { DashboardView } from './views/DashboardView';
@@ -21,11 +23,13 @@ import { Account, SavingsGoal, Transaction } from './types/finance';
 
 function MainLayout() {
   const { transactions } = useFinance();
+  const { isLocked } = useSecurity();
   const [activeTab, setActiveTab] = useState<string>('resumen');
 
   // Modal states
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
+  const [txInitialData, setTxInitialData] = useState<Partial<Transaction> | null>(null);
 
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [accountToEdit, setAccountToEdit] = useState<Account | null>(null);
@@ -42,6 +46,13 @@ function MainLayout() {
   // Handlers
   const handleOpenNewTransaction = () => {
     setTxToEdit(null);
+    setTxInitialData(null);
+    setIsTxModalOpen(true);
+  };
+
+  const handleOpenNewTransactionWithData = (data: Partial<Transaction>) => {
+    setTxToEdit(null);
+    setTxInitialData(data);
     setIsTxModalOpen(true);
   };
 
@@ -85,8 +96,12 @@ function MainLayout() {
         onOpenNewTransaction={handleOpenNewTransaction}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-24 lg:pb-12">
+      {/* Main Content Area con padding adaptado a la barra inferior móvil y safe-area */}
+      <main 
+        id="main-content"
+        role="main"
+        className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-12 focus:outline-none"
+      >
         {activeTab === 'resumen' && (
           <DashboardView
             onOpenNewTransaction={handleOpenNewTransaction}
@@ -99,6 +114,7 @@ function MainLayout() {
           <TransactionsView
             onOpenNewTransaction={handleOpenNewTransaction}
             onEditTransaction={handleEditTransaction}
+            onOpenNewTransactionWithData={handleOpenNewTransactionWithData}
           />
         )}
 
@@ -127,7 +143,9 @@ function MainLayout() {
         )}
 
         {activeTab === 'asesor' && (
-          <AdvisorView />
+          <AdvisorView
+            onOpenNewTransactionWithData={handleOpenNewTransactionWithData}
+          />
         )}
 
         {activeTab === 'ajustes' && (
@@ -142,6 +160,7 @@ function MainLayout() {
         isOpen={isTxModalOpen}
         onClose={() => setIsTxModalOpen(false)}
         transactionToEdit={txToEdit}
+        initialData={txInitialData}
       />
 
       <AccountModal
@@ -167,6 +186,9 @@ function MainLayout() {
         isOpen={isCompoundModalOpen}
         onClose={() => setIsCompoundModalOpen(false)}
       />
+
+      {/* Pantalla de Bloqueo por PIN / Biometría */}
+      <LockScreen />
     </div>
   );
 }
@@ -174,7 +196,9 @@ function MainLayout() {
 export default function App() {
   return (
     <FinanceProvider>
-      <MainLayout />
+      <SecurityProvider>
+        <MainLayout />
+      </SecurityProvider>
     </FinanceProvider>
   );
 }

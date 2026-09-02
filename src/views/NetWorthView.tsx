@@ -42,10 +42,10 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Patrimonio y Cuentas
           </h1>
-          <p className="text-sm text-slate-500 font-medium">
+          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
             Balance general de activos, ahorros, inversiones y pasivos
           </p>
         </div>
@@ -53,7 +53,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenCompoundSimulator}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs sm:text-sm font-semibold transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs sm:text-sm font-semibold transition-colors"
           >
             <Calculator className="w-4 h-4" />
             <span>Simulador de Interés</span>
@@ -69,39 +69,39 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
         </div>
       </div>
 
-      {/* Banner Principal de Patrimonio Neto */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 sm:p-8 rounded-3xl shadow-xl shadow-slate-900/10 relative overflow-hidden">
+      {/* Banner Principal de Patrimonio Neto con degradado adaptativo */}
+      <div className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 transition-colors">
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
               Patrimonio Neto Total
             </span>
-            <div className="text-3xl sm:text-4xl font-black font-mono-num tracking-tight mt-1 text-white">
+            <div className="text-3xl sm:text-4xl font-black font-mono-num tracking-tight mt-1 text-slate-900 dark:text-white">
               {formatMoney(metrics.totalNetWorth, currency)}
             </div>
-            <p className="text-xs text-slate-400 mt-1 font-medium">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
               Suma de activos financieros menos deudas y saldos en tarjeta
             </p>
           </div>
 
-          <div className="flex items-center gap-4 sm:gap-6 bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10">
+          <div className="flex items-center gap-4 sm:gap-6 bg-slate-100/90 dark:bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-slate-200/80 dark:border-white/10">
             <div>
-              <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
+              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block">
                 Total Activos
               </span>
-              <span className="text-lg sm:text-xl font-bold font-mono-num text-emerald-300">
+              <span className="text-lg sm:text-xl font-bold font-mono-num text-emerald-600 dark:text-emerald-300">
                 +{formatMoney(metrics.totalAssets, currency)}
               </span>
             </div>
 
-            <div className="w-px h-10 bg-white/20" />
+            <div className="w-px h-10 bg-slate-200 dark:bg-white/20" />
 
             <div>
-              <span className="text-[11px] font-bold text-red-400 uppercase tracking-wider block">
+              <span className="text-[11px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider block">
                 Total Pasivos / Deudas
               </span>
-              <span className="text-lg sm:text-xl font-bold font-mono-num text-red-300">
+              <span className="text-lg sm:text-xl font-bold font-mono-num text-rose-600 dark:text-rose-300">
                 -{formatMoney(metrics.totalLiabilities, currency)}
               </span>
             </div>
@@ -109,7 +109,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
         </div>
 
         {/* Decorative background glow */}
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
       {/* Listado de Cuentas: Activos y Pasivos */}
@@ -118,11 +118,11 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
         {/* Activos (Cuentas con saldo positivo) */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
               <span>Activos ({assetAccounts.length})</span>
             </h3>
-            <span className="text-sm font-bold text-emerald-600 font-mono-num">
+            <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono-num">
               {formatMoney(metrics.totalAssets, currency)}
             </span>
           </div>
@@ -131,7 +131,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
             {assetAccounts.map((acc) => (
               <div
                 key={acc.id}
-                className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex items-center justify-between group"
+                className="bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-all flex items-center justify-between group"
               >
                 <div className="flex items-center gap-3.5">
                   <div
@@ -142,9 +142,9 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-sm text-slate-900 leading-snug">{acc.name}</h4>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white leading-snug">{acc.name}</h4>
                       {acc.institution && (
-                        <span className="text-[10px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.2 rounded">
+                        <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold px-1.5 py-0.2 rounded border border-slate-200/60 dark:border-slate-700">
                           {acc.institution}
                         </span>
                       )}
@@ -154,12 +154,12 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span className="text-base font-bold text-slate-900 font-mono-num">
+                  <span className="text-base font-bold text-slate-900 dark:text-white font-mono-num">
                     {formatMoney(acc.balance, currency)}
                   </span>
                   <button
                     onClick={() => onOpenAccountModal(acc)}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
+                    className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
                     title="Editar cuenta"
                   >
                     <Edit3 className="w-4 h-4" />
@@ -173,25 +173,25 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
         {/* Pasivos y Tarjetas de Crédito */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
               <span>Pasivos y Tarjetas ({liabilityAccounts.length})</span>
             </h3>
-            <span className="text-sm font-bold text-red-600 font-mono-num">
+            <span className="text-sm font-bold text-red-600 dark:text-red-400 font-mono-num">
               -{formatMoney(metrics.totalLiabilities, currency)}
             </span>
           </div>
 
           <div className="space-y-3">
             {liabilityAccounts.length === 0 ? (
-              <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center">
-                <p className="text-xs font-semibold text-slate-500">No tienes deudas registradas ni saldos pendientes</p>
+              <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">No tienes deudas registradas ni saldos pendientes</p>
               </div>
             ) : (
               liabilityAccounts.map((acc) => (
                 <div
                   key={acc.id}
-                  className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex items-center justify-between group"
+                  className="bg-white dark:bg-gradient-to-br dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-all flex items-center justify-between group"
                 >
                   <div className="flex items-center gap-3.5">
                     <div
@@ -202,9 +202,9 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-sm text-slate-900 leading-snug">{acc.name}</h4>
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white leading-snug">{acc.name}</h4>
                         {acc.institution && (
-                          <span className="text-[10px] bg-slate-100 text-slate-600 font-semibold px-1.5 py-0.2 rounded">
+                          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-semibold px-1.5 py-0.2 rounded border border-slate-200/60 dark:border-slate-700">
                             {acc.institution}
                           </span>
                         )}
@@ -216,12 +216,12 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="text-base font-bold text-red-600 font-mono-num">
+                    <span className="text-base font-bold text-red-600 dark:text-red-400 font-mono-num">
                       {formatMoney(acc.balance, currency)}
                     </span>
                     <button
                       onClick={() => onOpenAccountModal(acc)}
-                      className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
+                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
                       title="Editar cuenta"
                     >
                       <Edit3 className="w-4 h-4" />
