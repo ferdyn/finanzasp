@@ -160,12 +160,12 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     <div className="space-y-6 pb-12">
       
       {/* Header de la vista */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div id="transactions-view-header" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
             Movimientos y Transacciones
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Historial de operaciones, filtros por categoría y búsqueda en tiempo real
           </p>
         </div>
@@ -195,6 +195,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
           </button>
 
           <button
+            id="btn-new-transaction"
             type="button"
             onClick={onOpenNewTransaction}
             aria-label="Crear nuevo movimiento"
@@ -272,8 +273,8 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
               aria-label="Buscar transacciones en tiempo real"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por descripción o categoría en tiempo real..."
-              className="w-full pl-10 pr-24 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+              placeholder="Buscar descripción o categoría..."
+              className="w-full pl-8 sm:pl-9 pr-20 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1.5 focus:ring-emerald-500 transition-all"
             />
 
             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -386,7 +387,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
             aria-label="Filtrar por tipo de transacción"
-            className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px]"
+            className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-normal text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1.5 focus:ring-emerald-500 min-h-[38px] truncate"
           >
             <option value="all">Todos los tipos</option>
             <option value="expense">Solo Gastos</option>
@@ -399,7 +400,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
             aria-label="Filtrar por categoría"
-            className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px]"
+            className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-normal text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1.5 focus:ring-emerald-500 min-h-[38px] truncate"
           >
             <option value="all">Todas las categorías</option>
             {categories.map((c) => (
@@ -414,7 +415,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             value={filterAccount}
             onChange={(e) => setFilterAccount(e.target.value)}
             aria-label="Filtrar por cuenta"
-            className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[40px]"
+            className="px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-normal text-slate-700 dark:text-slate-300 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1.5 focus:ring-emerald-500 min-h-[38px] truncate"
           >
             <option value="all">Todas las cuentas</option>
             {accounts.map((a) => (
@@ -429,13 +430,13 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             type="button"
             onClick={() => setFilterPeriodOnly(!filterPeriodOnly)}
             aria-label={filterPeriodOnly ? 'Ver transacciones de todo el historial' : 'Ver transacciones solo de este mes'}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all text-center min-h-[40px] flex items-center justify-center ${
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-normal border transition-all text-center min-h-[38px] flex items-center justify-center truncate ${
               filterPeriodOnly
-                ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300/80 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                 : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
             }`}
           >
-            {filterPeriodOnly ? 'Solo Mes Seleccionado' : 'Todo el Historial'}
+            <span className="truncate">{filterPeriodOnly ? 'Mes Seleccionado' : 'Todo el Historial'}</span>
           </button>
 
         </div>

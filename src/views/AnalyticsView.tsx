@@ -194,10 +194,10 @@ export const AnalyticsView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
             Análisis y Estadísticas
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Métricas interactivas de ahorro, evolución temporal y montos exactos de transacciones
           </p>
         </div>

@@ -52,7 +52,9 @@ export const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({ is
 
   if (!isOpen) return null;
 
-  const finalState = simulationData[simulationData.length - 1];
+  const finalState = (simulationData && simulationData.length > 0)
+    ? simulationData[simulationData.length - 1]
+    : { year: 'Año 0', invested: 0, interest: 0, total: 0 };
 
   return (
     <div 

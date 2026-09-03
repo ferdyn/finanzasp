@@ -166,14 +166,14 @@ export const AdvisorView: React.FC<AdvisorViewProps> = ({ onOpenNewTransactionWi
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
               Asesor Financiero Inteligente
             </h1>
             <span className="px-2 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wider shadow-sm">
               IA
             </span>
           </div>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Diagnóstico en tiempo real y recomendaciones personalizadas basadas en tus datos
           </p>
         </div>
@@ -367,7 +367,7 @@ export const AdvisorView: React.FC<AdvisorViewProps> = ({ onOpenNewTransactionWi
       </div>
 
       {/* Chat Interactivo con el Asesor IA */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col h-[480px] overflow-hidden">
+      <div id="advisor-chat-container" className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col h-[480px] overflow-hidden">
         
         {/* Chat Messages Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">

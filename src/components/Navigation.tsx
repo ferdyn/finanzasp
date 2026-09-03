@@ -10,7 +10,10 @@ import {
   Sparkles, 
   Plus, 
   X, 
-  ChevronRight 
+  ChevronRight,
+  Printer,
+  History,
+  BookOpen 
 } from 'lucide-react';
 
 interface NavigationProps {
@@ -33,24 +36,30 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'patrimonio', label: 'Patrimonio', icon: Landmark },
     { id: 'metas', label: 'Metas', icon: Target },
     { id: 'analisis', label: 'Análisis', icon: BarChart3 },
+    { id: 'historial', label: 'Historial', icon: History },
+    { id: 'reportes', label: 'Reportes PDF', icon: Printer },
     { id: 'asesor', label: 'Asesor IA', icon: Sparkles, badge: 'IA' },
+    { id: 'manual', label: 'Manual & Guía', icon: BookOpen },
     { id: 'ajustes', label: 'Ajustes', icon: Sliders },
   ];
 
   const secondaryItems = [
+    { id: 'manual', label: 'Manual de Usuario & Guía', desc: 'Guía interactiva, documentación por secciones y roles', icon: BookOpen },
+    { id: 'historial', label: 'Historial & Auditoría', desc: 'Registro de cambios y trazabilidad por usuario', icon: History },
     { id: 'patrimonio', label: 'Patrimonio y Cuentas', desc: 'Gestiona cuentas bancarias, efectivo y activos', icon: Landmark },
     { id: 'metas', label: 'Metas de Ahorro', desc: 'Sigue tus objetivos financieros y aportaciones', icon: Target },
     { id: 'analisis', label: 'Análisis y Estadísticas', desc: 'Métricas detalladas y comparativas temporales', icon: BarChart3 },
+    { id: 'reportes', label: 'Reportes e Impresión PDF', desc: 'Vista simplificada y balances optimizados para papel', icon: Printer },
     { id: 'asesor', label: 'Asesor IA', desc: 'Diagnóstico y consejos inteligentes', icon: Sparkles, badge: 'IA' },
     { id: 'ajustes', label: 'Ajustes', desc: 'Tema (claro/oscuro), divisa y copias de seguridad', icon: Sliders },
   ];
 
-  const isMoreActive = ['patrimonio', 'metas', 'analisis', 'asesor', 'ajustes'].includes(activeTab);
+  const isMoreActive = ['manual', 'historial', 'patrimonio', 'metas', 'analisis', 'reportes', 'asesor', 'ajustes'].includes(activeTab);
 
   return (
     <>
       {/* Desktop Navigation Tabs */}
-      <div className="hidden lg:block bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors duration-200">
+      <div id="desktop-main-nav" className="hidden lg:block bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav role="tablist" aria-label="Navegación principal" className="flex space-x-1 py-2 overflow-x-auto no-scrollbar">
             {navItems.map((item) => {
@@ -174,6 +183,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
       {/* Mobile Bottom Navigation Bar con botón Nuevo en el Centro */}
       <nav 
+        id="mobile-bottom-navigation"
         role="tablist"
         aria-label="Navegación inferior móvil"
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-2 py-1 shadow-lg shadow-slate-900/10 safe-area-bottom transition-colors duration-200"

@@ -2,7 +2,8 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import { Account, AutoBudgetRule, Budget, BudgetCutSuggestion, Category, CurrencyCode, RecurringBill, SavingsGoal, ThemeMode, Transaction, TransactionTemplate } from '../types/finance';
 import { DEFAULT_CATEGORIES } from '../data/categories';
 import { INITIAL_ACCOUNTS, INITIAL_GOALS, INITIAL_RECURRING, INITIAL_TEMPLATES, generateSeedBudgets, generateSeedTransactions } from '../data/seedData';
-import { getCurrentMonthPeriod } from '../utils/format';
+import { getCurrentMonthPeriod, setGlobalPrivacyMode } from '../utils/format';
+import { useUser } from './UserContext';
 
 interface FinanceContextType {
   // Estado base
@@ -18,6 +19,11 @@ interface FinanceContextType {
   selectedPeriod: string; // YYYY-MM
   theme: ThemeMode;
   effectiveTheme: 'light' | 'dark';
+  
+  // Modo Espía / Privacidad en lugares públicos
+  privacyMode: boolean;
+  setPrivacyMode: (enabled: boolean) => void;
+  togglePrivacyMode: () => void;
   
   // Modo de Ahorro Extremo
   extremeSavingsMode: boolean;
@@ -78,6 +84,7 @@ interface FinanceContextType {
   updateRecurringBill: (id: string, bill: Partial<RecurringBill>) => void;
   deleteRecurringBill: (id: string) => void;
   processRecurringBill: (id: string) => void;
+  postponeRecurringBill: (id: string, days?: number) => void;
 
   // Utilidades de datos
   resetToSeedData: () => void;
@@ -123,6 +130,7 @@ const STORAGE_KEYS = {
   THEME: 'finantrack_theme_preference',
   EXTREME_SAVINGS_MODE: 'finantrack_extreme_savings_mode',
   BUDGETS_BACKUP_CUTS: 'finantrack_budgets_backup_cuts',
+  PRIVACY_MODE: 'finantrack_privacy_mode',
 };
 
 const DEFAULT_AUTO_BUDGET_RULES: AutoBudgetRule[] = [
@@ -137,10 +145,60 @@ const DEFAULT_AUTO_BUDGET_RULES: AutoBudgetRule[] = [
 ];
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser, logAction } = useUser();
   const [selectedPeriod, setSelectedPeriod] = useState<string>(getCurrentMonthPeriod());
   const [currency, setCurrencyState] = useState<CurrencyCode>(() => {
     return (localStorage.getItem(STORAGE_KEYS.CURRENCY) as CurrencyCode) || 'EUR';
   });
+
+  // Modo Espía / Privacidad en público (Ocultar cifras y saldos)
+  const [privacyMode, setPrivacyModeState] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEYS.PRIVACY_MODE);
+      const isPriv = saved === 'true';
+      setGlobalPrivacyMode(isPriv);
+      return isPriv;
+    }
+    return false;
+  });
+
+  const setPrivacyMode = (enabled: boolean) => {
+    setPrivacyModeState(enabled);
+    setGlobalPrivacyMode(enabled);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEYS.PRIVACY_MODE, String(enabled));
+      if (enabled) {
+        document.documentElement.classList.add('privacy-mode');
+      } else {
+        document.documentElement.classList.remove('privacy-mode');
+      }
+    }
+  };
+
+  const togglePrivacyMode = () => {
+    setPrivacyMode(!privacyMode);
+  };
+
+  useEffect(() => {
+    setGlobalPrivacyMode(privacyMode);
+    if (privacyMode) {
+      document.documentElement.classList.add('privacy-mode');
+    } else {
+      document.documentElement.classList.remove('privacy-mode');
+    }
+  }, [privacyMode]);
+
+  // Atajo de teclado global: Alt + P (o Option + P) para alternar Modo Espía al instante
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP')) {
+        e.preventDefault();
+        togglePrivacyMode();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [privacyMode]);
 
   // Modo de Ahorro Extremo
   const [extremeSavingsMode, setExtremeSavingsModeState] = useState<boolean>(() => {
@@ -155,7 +213,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [budgetsBackupBeforeCuts, setBudgetsBackupBeforeCuts] = useState<Budget[] | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.BUDGETS_BACKUP_CUTS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return null;
   });
@@ -211,17 +272,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const saved = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
     if (saved) {
       try {
-        const parsed: Category[] = JSON.parse(saved);
-        return parsed.map(c => {
-          if (c.isEssential !== undefined) return c;
-          const def = DEFAULT_CATEGORIES.find(dc => dc.id === c.id);
-          if (def && def.isEssential !== undefined) {
-            return { ...c, isEssential: def.isEssential };
-          }
-          const lower = c.name.toLowerCase();
-          const isDefEssential = ['alimentación', 'supermercado', 'vivienda', 'alquiler', 'servicios', 'luz', 'agua', 'gas', 'transporte', 'salud', 'farmacia', 'mascota', 'impuesto', 'educación'].some(k => lower.includes(k));
-          return { ...c, isEssential: isDefEssential };
-        });
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(c => {
+            if (c.isEssential !== undefined) return c;
+            const def = DEFAULT_CATEGORIES.find(dc => dc.id === c.id);
+            if (def && def.isEssential !== undefined) {
+              return { ...c, isEssential: def.isEssential };
+            }
+            const lower = (c.name || '').toLowerCase();
+            const isDefEssential = ['alimentación', 'supermercado', 'vivienda', 'alquiler', 'servicios', 'luz', 'agua', 'gas', 'transporte', 'salud', 'farmacia', 'mascota', 'impuesto', 'educación'].some(k => lower.includes(k));
+            return { ...c, isEssential: isDefEssential };
+          });
+        }
       } catch (e) { console.error(e); }
     }
     return DEFAULT_CATEGORIES;
@@ -230,7 +293,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [accounts, setAccounts] = useState<Account[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_ACCOUNTS;
   });
@@ -238,7 +304,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return generateSeedTransactions();
   });
@@ -246,7 +315,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [budgets, setBudgets] = useState<Budget[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.BUDGETS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return generateSeedBudgets();
   });
@@ -254,7 +326,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [autoBudgetRules, setAutoBudgetRules] = useState<AutoBudgetRule[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.AUTO_BUDGET_RULES);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return DEFAULT_AUTO_BUDGET_RULES;
   });
@@ -262,7 +337,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [goals, setGoals] = useState<SavingsGoal[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.GOALS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_GOALS;
   });
@@ -270,7 +348,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.RECURRING);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_RECURRING;
   });
@@ -278,7 +359,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [templates, setTemplates] = useState<TransactionTemplate[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) { console.error(e); }
     }
     return INITIAL_TEMPLATES;
   });
@@ -383,6 +467,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const newTx: Transaction = {
       ...data,
       id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      createdByUserId: data.createdByUserId || currentUser?.id,
+      createdByName: data.createdByName || currentUser?.name,
     };
 
     setTransactions(prev => [newTx, ...prev]);
@@ -405,6 +491,25 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
       return acc;
     }));
+
+    const catName = categories.find(c => c.id === data.categoryId)?.name || 'Sin categoría';
+    const accName = accounts.find(a => a.id === data.accountId)?.name || 'Cuenta';
+    const typeLabel = data.type === 'income' ? 'Ingreso' : data.type === 'transfer' ? 'Transferencia' : 'Gasto';
+
+    logAction({
+      action: 'TRANSACTION_CREATED',
+      category: 'transacciones',
+      title: `${typeLabel} Registrado`,
+      description: `Registró un ${typeLabel.toLowerCase()} de ${data.amount.toFixed(2)} ${currency} en "${catName}" desde "${accName}".`,
+      severity: 'info',
+      details: {
+        amount: data.amount,
+        type: data.type,
+        categoryId: data.categoryId,
+        accountId: data.accountId,
+        note: data.note,
+      },
+    });
   };
 
   const updateTransaction = (id: string, updated: Partial<Transaction>) => {
@@ -438,6 +543,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }));
 
     setTransactions(prev => prev.map(t => t.id === id ? finalTx : t));
+
+    logAction({
+      action: 'TRANSACTION_UPDATED',
+      category: 'transacciones',
+      title: 'Transacción Modificada',
+      description: `Editó los datos de un movimiento contable de ${finalTx.amount.toFixed(2)} ${currency}.`,
+      severity: 'info',
+      details: {
+        transactionId: id,
+        changes: updated,
+      },
+    });
   };
 
   const deleteTransaction = (id: string) => {
@@ -457,6 +574,21 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }));
 
     setTransactions(prev => prev.filter(t => t.id !== id));
+
+    const catName = categories.find(c => c.id === tx.categoryId)?.name || 'Sin categoría';
+
+    logAction({
+      action: 'TRANSACTION_DELETED',
+      category: 'transacciones',
+      title: 'Transacción Eliminada',
+      description: `Eliminó un ${tx.type === 'income' ? 'ingreso' : 'gasto'} de ${tx.amount.toFixed(2)} ${currency} (${catName}).`,
+      severity: 'warning',
+      details: {
+        transactionId: id,
+        amount: tx.amount,
+        type: tx.type,
+      },
+    });
   };
 
   // Acciones de Cuentas
@@ -466,14 +598,54 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       id: `acc-${Date.now()}`,
     };
     setAccounts(prev => [...prev, newAcc]);
+
+    logAction({
+      action: 'ACCOUNT_CREATED',
+      category: 'cuentas',
+      title: 'Nueva Cuenta Creada',
+      description: `Añadió la cuenta "${newAcc.name}" con saldo inicial de ${newAcc.balance.toFixed(2)} ${newAcc.currency}.`,
+      severity: 'success',
+      details: {
+        accountId: newAcc.id,
+        name: newAcc.name,
+        type: newAcc.type,
+        initialBalance: newAcc.balance,
+      },
+    });
   };
 
   const updateAccount = (id: string, updated: Partial<Account>) => {
+    const existing = accounts.find(a => a.id === id);
     setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
+
+    logAction({
+      action: 'ACCOUNT_UPDATED',
+      category: 'cuentas',
+      title: 'Cuenta Actualizada',
+      description: `Actualizó los datos de la cuenta "${existing?.name || id}".`,
+      severity: 'info',
+      details: {
+        accountId: id,
+        changes: updated,
+      },
+    });
   };
 
   const deleteAccount = (id: string) => {
+    const existing = accounts.find(a => a.id === id);
     setAccounts(prev => prev.filter(a => a.id !== id));
+
+    logAction({
+      action: 'ACCOUNT_DELETED',
+      category: 'cuentas',
+      title: 'Cuenta Eliminada',
+      description: `Eliminó la cuenta "${existing?.name || id}" del patrimonio.`,
+      severity: 'warning',
+      details: {
+        accountId: id,
+        name: existing?.name,
+      },
+    });
   };
 
   // Acciones de Categorías
@@ -483,6 +655,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       id: `cat-${Date.now()}`,
     };
     setCategories(prev => [...prev, newCat]);
+
+    logAction({
+      action: 'CATEGORY_CREATED',
+      category: 'sistema',
+      title: 'Nueva Categoría Creada',
+      description: `Creó la categoría "${newCat.name}" para ${newCat.type === 'income' ? 'ingresos' : 'gastos'}.`,
+      severity: 'info',
+      details: {
+        categoryId: newCat.id,
+        name: newCat.name,
+        type: newCat.type,
+      },
+    });
   };
 
   const updateCategory = (id: string, updated: Partial<Category>) => {
@@ -490,7 +675,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteCategory = (id: string) => {
+    const existing = categories.find(c => c.id === id);
     setCategories(prev => prev.filter(c => c.id !== id));
+
+    logAction({
+      action: 'CATEGORY_DELETED',
+      category: 'sistema',
+      title: 'Categoría Eliminada',
+      description: `Eliminó la categoría "${existing?.name || id}".`,
+      severity: 'warning',
+    });
   };
 
   const isCategoryEssential = (categoryId: string): boolean => {
@@ -565,15 +759,38 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         ];
       }
     });
+
+    const catName = categories.find(c => c.id === categoryId)?.name || 'Categoría';
+    logAction({
+      action: 'BUDGET_UPDATED',
+      category: 'presupuestos',
+      title: 'Presupuesto Configurado',
+      description: `Fijó el límite de gasto para "${catName}" en ${monthlyLimit.toFixed(2)} ${currency} (${selectedPeriod}).`,
+      severity: 'info',
+      details: {
+        categoryId,
+        monthlyLimit,
+        period: selectedPeriod,
+      },
+    });
   };
 
   const deleteBudget = (id: string) => {
     const budgetToDelete = budgets.find(b => b.id === id);
     if (budgetToDelete) {
+      const catName = categories.find(c => c.id === budgetToDelete.categoryId)?.name || 'Categoría';
       // También desactivar la regla automática asociada para que no se re-cree
       setAutoBudgetRules(prevRules => 
         prevRules.map(r => r.categoryId === budgetToDelete.categoryId ? { ...r, enabled: false } : r)
       );
+
+      logAction({
+        action: 'BUDGET_DELETED',
+        category: 'presupuestos',
+        title: 'Presupuesto Eliminado',
+        description: `Eliminó la asignación presupuestaria de "${catName}".`,
+        severity: 'warning',
+      });
     }
     setBudgets(prev => prev.filter(b => b.id !== id));
   };
@@ -654,6 +871,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       id: `goal-${Date.now()}`,
     };
     setGoals(prev => [...prev, newGoal]);
+
+    logAction({
+      action: 'GOAL_CREATED',
+      category: 'metas',
+      title: 'Nueva Meta de Ahorro',
+      description: `Creó el objetivo "${newGoal.name}" con objetivo de ${newGoal.targetAmount.toFixed(2)} ${currency}.`,
+      severity: 'success',
+      details: {
+        goalId: newGoal.id,
+        name: newGoal.name,
+        targetAmount: newGoal.targetAmount,
+      },
+    });
   };
 
   const updateGoal = (id: string, updated: Partial<SavingsGoal>) => {
@@ -661,6 +891,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const contributeToGoal = (id: string, amount: number, fromAccountId?: string) => {
+    const targetGoal = goals.find(g => g.id === id);
     setGoals(prev => prev.map(g => {
       if (g.id === id) {
         const newAmt = Math.min(g.targetAmount, g.currentAmount + amount);
@@ -669,6 +900,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       return g;
     }));
 
+    logAction({
+      action: 'GOAL_CONTRIBUTED',
+      category: 'metas',
+      title: 'Aportación a Meta de Ahorro',
+      description: `Aportó ${amount.toFixed(2)} ${currency} a la meta "${targetGoal?.name || 'Ahorro'}".`,
+      severity: 'success',
+      details: {
+        goalId: id,
+        amount,
+      },
+    });
+
     if (fromAccountId) {
       addTransaction({
         amount,
@@ -676,14 +919,23 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         categoryId: 'cat-inversiones',
         accountId: fromAccountId,
         date: new Date().toISOString().split('T')[0],
-        note: `Aporte a meta de ahorro`,
+        note: `Aporte a meta: ${targetGoal?.name || 'Ahorro'}`,
         tags: ['Ahorro', 'Meta'],
       });
     }
   };
 
   const deleteGoal = (id: string) => {
+    const targetGoal = goals.find(g => g.id === id);
     setGoals(prev => prev.filter(g => g.id !== id));
+
+    logAction({
+      action: 'GOAL_DELETED',
+      category: 'metas',
+      title: 'Meta de Ahorro Eliminada',
+      description: `Eliminó la meta de ahorro "${targetGoal?.name || id}".`,
+      severity: 'warning',
+    });
   };
 
   // Plantillas de Transacción
@@ -711,6 +963,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       id: `rec-${Date.now()}`,
     };
     setRecurringBills(prev => [...prev, newBill]);
+
+    logAction({
+      action: 'RECURRING_CREATED',
+      category: 'recurrentes',
+      title: 'Gasto Recurrente Programado',
+      description: `Programó el gasto recurrente "${newBill.name}" por ${newBill.amount.toFixed(2)} ${currency} (${newBill.frequency}).`,
+      severity: 'info',
+      details: {
+        billId: newBill.id,
+        name: newBill.name,
+        amount: newBill.amount,
+        frequency: newBill.frequency,
+      },
+    });
   };
 
   const updateRecurringBill = (id: string, updated: Partial<RecurringBill>) => {
@@ -718,7 +984,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteRecurringBill = (id: string) => {
+    const targetBill = recurringBills.find(b => b.id === id);
     setRecurringBills(prev => prev.filter(b => b.id !== id));
+
+    logAction({
+      action: 'RECURRING_DELETED',
+      category: 'recurrentes',
+      title: 'Gasto Recurrente Eliminado',
+      description: `Eliminó el gasto programado "${targetBill?.name || id}".`,
+      severity: 'warning',
+    });
   };
 
   const processRecurringBill = (id: string) => {
@@ -736,6 +1011,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isRecurring: true,
     });
 
+    logAction({
+      action: 'RECURRING_PROCESSED',
+      category: 'recurrentes',
+      title: 'Pago Recurrente Procesado',
+      description: `Ejecutó y contabilizó el cargo recurrente de "${bill.name}" por ${bill.amount.toFixed(2)} ${currency}.`,
+      severity: 'info',
+    });
+
     // Calcular siguiente fecha
     const nextDate = new Date(bill.nextDueDate || new Date());
     if (bill.frequency === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
@@ -744,6 +1027,29 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     else if (bill.frequency === 'yearly') nextDate.setFullYear(nextDate.getFullYear() + 1);
 
     updateRecurringBill(id, { nextDueDate: nextDate.toISOString().split('T')[0] });
+  };
+
+  const postponeRecurringBill = (id: string, days: number = 3) => {
+    const bill = recurringBills.find(b => b.id === id);
+    if (!bill) return;
+    const baseDateStr = bill.nextDueDate || new Date().toISOString().split('T')[0];
+    const [year, month, day] = baseDateStr.split('-').map(Number);
+    const targetDate = new Date(year, month - 1, day);
+    targetDate.setDate(targetDate.getDate() + days);
+    
+    const y = targetDate.getFullYear();
+    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const d = String(targetDate.getDate()).padStart(2, '0');
+    const nextDue = `${y}-${m}-${d}`;
+    updateRecurringBill(id, { nextDueDate: nextDue });
+
+    logAction({
+      action: 'RECURRING_POSTPONED',
+      category: 'recurrentes',
+      title: 'Pago Recurrente Pospuesto',
+      description: `Pospuso el vencimiento de "${bill.name}" por ${days} días (nueva fecha: ${nextDue}).`,
+      severity: 'info',
+    });
   };
 
   // Reset y Limpieza
@@ -757,6 +1063,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setRecurringBills(INITIAL_RECURRING);
     setTemplates(INITIAL_TEMPLATES);
     setSelectedPeriod(getCurrentMonthPeriod());
+
+    logAction({
+      action: 'DATA_RESET',
+      category: 'sistema',
+      title: 'Datos de Demostración Restaurados',
+      description: 'Restauró el conjunto completo de datos financieros de ejemplo.',
+      severity: 'warning',
+    });
   };
 
   const clearAllData = () => {
@@ -766,6 +1080,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setGoals([]);
     setRecurringBills([]);
     setTemplates([]);
+
+    logAction({
+      action: 'DATA_RESET',
+      category: 'sistema',
+      title: 'Base de Datos Financiera Vaciada',
+      description: 'Se borraron todas las transacciones, cuentas y presupuestos del sistema.',
+      severity: 'danger',
+    });
   };
 
   const exportDataJSON = () => {
@@ -1091,6 +1413,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         selectedPeriod,
         theme,
         effectiveTheme,
+        privacyMode,
+        setPrivacyMode,
+        togglePrivacyMode,
         extremeSavingsMode,
         setExtremeSavingsMode,
         toggleCategoryEssential,
@@ -1126,6 +1451,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateRecurringBill,
         deleteRecurringBill,
         processRecurringBill,
+        postponeRecurringBill,
         resetToSeedData,
         clearAllData,
         exportDataJSON,

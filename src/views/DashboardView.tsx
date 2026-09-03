@@ -2,10 +2,12 @@ import React from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { formatMoney, formatDate, formatMonthPeriod } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
+import { RecurringRemindersWidget } from '../components/RecurringRemindersWidget';
+import { getRecurringStatus } from '../utils/recurring';
 import { 
   TrendingDown, TrendingUp, Wallet, ArrowUpRight, ArrowDownRight, 
   PiggyBank, ShieldCheck, AlertTriangle, CheckCircle2, 
-  ChevronRight, Plus, Sparkles, PieChart, CreditCard, Target, Zap
+  ChevronRight, Plus, Sparkles, PieChart, CreditCard, Target, Zap, Bell, Check, Clock
 } from 'lucide-react';
 import { PieChart as RechartsPie, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
@@ -29,11 +31,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     goals, 
     categories, 
     transactions,
+    recurringBills,
+    processRecurringBill,
     getCategoryById, 
     getCategorySpendForPeriod,
     extremeSavingsMode,
     extremeSavingsAnalysis
   } = useFinance();
+
+  // Alertas de recordatorios urgentes/vencidos
+  const urgentBills = recurringBills
+    .filter(b => b.isActive)
+    .map(b => ({
+      ...b,
+      status: getRecurringStatus(b.nextDueDate, b.reminderDays || 7)
+    }))
+    .filter(b => b.status.isOverdue || b.status.isToday);
+
+  const overdueBills = urgentBills.filter(b => b.status.isOverdue);
+  const todayBills = urgentBills.filter(b => b.status.isToday);
 
   const currentTxs = transactions
     .filter(t => t.date.startsWith(selectedPeriod))
@@ -81,10 +97,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* Saludo y Resumen de Estado */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
             Resumen Financiero
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Estado de cuentas, ingresos y gastos de <span className="text-slate-800 dark:text-slate-200 font-semibold">{formatMonthPeriod(selectedPeriod)}</span>
           </p>
         </div>
@@ -105,6 +121,73 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Banner de Recordatorios de Pagos Vencidos o de Hoy */}
+      {urgentBills.length > 0 && (
+        <div className={`p-4 sm:p-5 rounded-2xl border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in duration-300 ${
+          overdueBills.length > 0
+            ? 'bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-transparent dark:from-rose-950/40 dark:via-slate-900 dark:to-slate-900 border-rose-300 dark:border-rose-800'
+            : 'bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent dark:from-amber-950/40 dark:via-slate-900 dark:to-slate-900 border-amber-300 dark:border-amber-800'
+        }`}>
+          <div className="flex items-center gap-3.5">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+              overdueBills.length > 0 
+                ? 'bg-rose-500 text-white shadow-rose-500/30' 
+                : 'bg-amber-500 text-white shadow-amber-500/30'
+            }`}>
+              <Bell className="w-5 h-5 animate-bounce" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
+                  {overdueBills.length > 0 
+                    ? `¡Atención! ${overdueBills.length} pago${overdueBills.length > 1 ? 's' : ''} recurrente${overdueBills.length > 1 ? 's' : ''} vencido${overdueBills.length > 1 ? 's' : ''}`
+                    : `¡Atención! Tienes ${todayBills.length} pago${todayBills.length > 1 ? 's' : ''} que vence${todayBills.length > 1 ? 'n' : ''} hoy`
+                  }
+                </h3>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black text-white ${
+                  overdueBills.length > 0 ? 'bg-rose-600' : 'bg-amber-500'
+                }`}>
+                  {overdueBills.length > 0 ? 'VENCIDO' : 'HOY'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                {urgentBills.slice(0, 2).map((b, i) => (
+                  <span key={b.id}>
+                    {i > 0 && ', '}
+                    {b.name} (<span className="font-mono-num font-semibold">{formatMoney(b.amount, currency)}</span>)
+                  </span>
+                ))}
+                {urgentBills.length > 2 && ` y ${urgentBills.length - 2} más`} • Total pendiente:{' '}
+                <strong className="text-slate-900 dark:text-white font-mono-num">
+                  {formatMoney(urgentBills.reduce((acc, b) => acc + b.amount, 0), currency)}
+                </strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            {urgentBills.length === 1 && (
+              <button
+                type="button"
+                onClick={() => processRecurringBill(urgentBills[0].id)}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-600/20 transition-all flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Pagar {urgentBills[0].name}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveTab('ajustes')}
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white shadow-sm transition-all flex items-center gap-1.5"
+            >
+              <span>Gestionar Recordatorios</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Banner de Modo de Ahorro Extremo */}
       {extremeSavingsMode && (
@@ -131,7 +214,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="flex items-center gap-2 self-start md:self-auto">
             <button
               type="button"
-              onClick={() => setActiveTab('budgets')}
+              onClick={() => setActiveTab('presupuestos')}
               className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/20 transition-all flex items-center gap-1.5"
             >
               <span>Ver Plan de Recortes</span>
@@ -142,7 +225,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       )}
 
       {/* Banner Principal de Resumen Financiero con el degradado adaptativo */}
-      <div className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 transition-colors">
+      <div id="dashboard-balance-banner" className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 transition-colors">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <div className="flex items-center gap-2">
@@ -201,7 +284,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 4 Métricas Principales */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div id="dashboard-kpi-grid" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         
         {/* Ingresos */}
         <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all">
@@ -461,6 +544,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
       </div>
+
+      {/* Widget Interactivo de Recordatorios de Pagos y Vencimientos */}
+      <RecurringRemindersWidget
+        onOpenNewRecurring={() => setActiveTab('ajustes')}
+        onOpenSettings={() => setActiveTab('ajustes')}
+      />
 
       {/* Fila 3: Últimos Movimientos */}
       <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all">

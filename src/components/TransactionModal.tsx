@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
+import { ROLE_DEFINITIONS } from '../types/user';
 import { Transaction, TransactionTemplate, TransactionType } from '../types/finance';
 import { DynamicIcon } from './DynamicIcon';
 import { 
   X, Check, ArrowRightLeft, TrendingDown, TrendingUp, Calendar, Tag, FileText, 
-  Trash2, Bookmark, BookmarkPlus, Sparkles, CheckCircle2 
+  Trash2, Bookmark, BookmarkPlus, Sparkles, CheckCircle2, UserCheck, ShieldAlert 
 } from 'lucide-react';
 import { CURRENCIES, formatMoney } from '../utils/format';
 
@@ -32,6 +34,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     addTemplate,
     deleteTemplate,
   } = useFinance();
+
+  const { currentUser, hasPermission } = useUser();
 
   const [type, setType] = useState<TransactionType>('expense');
   const [amountStr, setAmountStr] = useState<string>('');
@@ -256,19 +260,33 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar modal de movimiento"
-            className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors active:scale-95"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-lg">
+              <span>{currentUser.avatar}</span>
+              <span className="truncate max-w-[90px]">{currentUser.name}</span>
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar modal de movimiento"
+              className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition-colors active:scale-95"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Form Content */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 scroll-touch">
           
+          {/* Advertencia si no tiene permiso */}
+          {!hasPermission(transactionToEdit ? 'canEditTransactions' : 'canCreateTransactions') && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 rounded-xl text-xs flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 shrink-0" />
+              <span>Tu rol ({ROLE_DEFINITIONS[currentUser.role]?.name}) tiene restringida la modificación de movimientos.</span>
+            </div>
+          )}
+
           {/* Toast / Banner Informativo */}
           {toastMessage && (
             <div className="flex items-center justify-between gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs font-semibold animate-in fade-in slide-in-from-top-1">
@@ -716,7 +734,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
           {/* Botones de Acción */}
           <div className="flex items-center gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 pb-1">
-            {transactionToEdit && (
+            {transactionToEdit && hasPermission('canDeleteTransactions') && (
               <button
                 type="button"
                 onClick={handleDelete}
@@ -738,7 +756,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
             <button
               type="submit"
-              className="flex-1 py-3 px-4 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 text-sm font-semibold text-white shadow-md transition-all flex items-center justify-center gap-2 min-h-[48px] active:scale-[0.98]"
+              disabled={!hasPermission(transactionToEdit ? 'canEditTransactions' : 'canCreateTransactions')}
+              className="flex-1 py-3 px-4 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold text-white shadow-md transition-all flex items-center justify-center gap-2 min-h-[48px] active:scale-[0.98]"
             >
               <Check className="w-4 h-4" />
               <span>{transactionToEdit ? 'Guardar Cambios' : 'Registrar'}</span>

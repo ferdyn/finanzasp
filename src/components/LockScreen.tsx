@@ -153,6 +153,26 @@ export const LockScreen: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLocked, showForgotModal, handleAddDigit, handleDeleteDigit, handleVerify, enteredPin]);
 
+  // Garantizar que el modo oculto (privacy-mode) nunca oculte o distorsione el teclado ni los dígitos del bloqueo de pantalla
+  useEffect(() => {
+    if (!isLocked) return;
+
+    const hadPrivacyMode = document.documentElement.classList.contains('privacy-mode');
+    if (hadPrivacyMode) {
+      document.documentElement.classList.remove('privacy-mode');
+    }
+
+    return () => {
+      // Al desbloquearse o desmontarse, restaurar el modo oculto si estaba configurado por el usuario
+      if (hadPrivacyMode && typeof window !== 'undefined') {
+        const savedPrivacy = localStorage.getItem('finantrack_privacy_mode');
+        if (savedPrivacy === 'true') {
+          document.documentElement.classList.add('privacy-mode');
+        }
+      }
+    };
+  }, [isLocked]);
+
   if (!isLocked) return null;
 
   return (
@@ -221,7 +241,7 @@ export const LockScreen: React.FC = () => {
         </div>
 
         {/* Teclado Táctil Numérico */}
-        <div className="grid grid-cols-3 gap-3 w-full max-w-[280px]">
+        <div className="grid grid-cols-3 gap-3 w-full max-w-[280px] lockscreen-keypad no-privacy-blur">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(num => (
             <button
               key={num}
@@ -229,9 +249,12 @@ export const LockScreen: React.FC = () => {
               id={`keypad-${num}`}
               onClick={() => handleAddDigit(num)}
               disabled={lockoutSeconds > 0 || isVerifying}
-              className="w-20 h-16 sm:w-20 sm:h-16 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700/80 active:scale-95 text-slate-900 dark:text-white font-mono-num font-bold text-xl sm:text-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-xs transition-all flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none mx-auto"
+              className="w-20 h-16 sm:w-20 sm:h-16 rounded-2xl bg-white dark:bg-slate-800/90 hover:bg-slate-100 dark:hover:bg-slate-700/90 active:scale-95 text-slate-900 dark:text-white font-sans no-privacy-blur font-bold text-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-xs transition-all flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none mx-auto select-none"
+              style={{ filter: 'none', WebkitFilter: 'none', opacity: 1 }}
             >
-              {num}
+              <span className="no-privacy-blur select-none pointer-events-none text-slate-900 dark:text-white font-bold text-2xl">
+                {num}
+              </span>
             </button>
           ))}
 
@@ -244,7 +267,8 @@ export const LockScreen: React.FC = () => {
                 onClick={handleBiometricUnlock}
                 disabled={lockoutSeconds > 0 || isVerifying}
                 title="Desbloquear con Sensor Biométrico (Touch ID / Face ID)"
-                className="w-20 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 active:scale-95 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 shadow-xs transition-all flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none"
+                className="w-20 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 active:scale-95 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 shadow-xs transition-all flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none no-privacy-blur select-none"
+                style={{ filter: 'none', WebkitFilter: 'none', opacity: 1 }}
               >
                 <Fingerprint className="w-7 h-7 stroke-[2.2]" />
               </button>
@@ -259,9 +283,12 @@ export const LockScreen: React.FC = () => {
             id="keypad-0"
             onClick={() => handleAddDigit('0')}
             disabled={lockoutSeconds > 0 || isVerifying}
-            className="w-20 h-16 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700/80 active:scale-95 text-slate-900 dark:text-white font-mono-num font-bold text-xl sm:text-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-xs transition-all flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none mx-auto"
+            className="w-20 h-16 rounded-2xl bg-white dark:bg-slate-800/90 hover:bg-slate-100 dark:hover:bg-slate-700/90 active:scale-95 text-slate-900 dark:text-white font-sans no-privacy-blur font-bold text-2xl border border-slate-200/90 dark:border-slate-700/80 shadow-xs transition-all flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none mx-auto select-none"
+            style={{ filter: 'none', WebkitFilter: 'none', opacity: 1 }}
           >
-            0
+            <span className="no-privacy-blur select-none pointer-events-none text-slate-900 dark:text-white font-bold text-2xl">
+              0
+            </span>
           </button>
 
           {/* Botón Borrar (Backspace) */}
@@ -272,7 +299,7 @@ export const LockScreen: React.FC = () => {
               onClick={handleDeleteDigit}
               disabled={enteredPin.length === 0 || lockoutSeconds > 0 || isVerifying}
               title="Borrar último dígito"
-              className="w-20 h-16 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700/80 active:scale-95 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-slate-700/60 shadow-xs transition-all flex items-center justify-center disabled:opacity-20 disabled:pointer-events-none"
+              className="w-20 h-16 rounded-2xl bg-white dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-700/80 active:scale-95 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200/80 dark:border-slate-700/60 shadow-xs transition-all flex items-center justify-center disabled:opacity-20 disabled:pointer-events-none no-privacy-blur"
             >
               <Delete className="w-6 h-6 stroke-[2]" />
             </button>

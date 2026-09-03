@@ -3,31 +3,70 @@
 @variant dark (&:where(.dark, .dark *));
 
 @layer base {
-  html.dark {
-    color-scheme: dark;
+  :root {
+    color-scheme: light;
+    --font-body: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-heading: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --color-bg-light: #f8fafc;
+    --color-text-primary-light: #0f172a;
+    --color-text-secondary-light: #475569;
   }
 
-  html.dark body {
-    background-color: #020617;
-    color: #f8fafc;
+  html.dark {
+    color-scheme: dark;
+    --color-bg-dark: #0b0f19;
+    --color-text-primary-dark: #e2e8f0;
+    --color-text-secondary-dark: #94a3b8;
+  }
+
+  html {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background-color: #f8fafc;
+    color: #0f172a;
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* Prevenir zoom involuntario en iOS Safari al enfocar inputs */
-  @media screen and (max-width: 640px) {
-    input, select, textarea {
-      font-size: 16px !important;
-    }
+  html.dark body {
+    background-color: #0b0f19;
+    color: #e2e8f0;
   }
 
-  /* Indicadores de foco accesibles para navegación por teclado y lectores */
+  /* Jerarquía tipográfica equilibrada con Plus Jakarta Sans */
+  h1, h2, h3, h4, h5, h6, .font-heading, .font-display {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.015em;
+  }
+
+  /* En modo oscuro, evitar el blanco 100% puro para que no deslumbre en pantallas con mucho brillo */
+  html.dark h1, 
+  html.dark h2, 
+  html.dark h3, 
+  html.dark h4, 
+  html.dark h5, 
+  html.dark h6 {
+    color: #f1f5f9;
+  }
+
+  input, select, textarea, button {
+    font-family: inherit;
+  }
+
+  /* Indicadores de foco accesibles con contraste optimizado */
   :focus-visible {
-    outline: 2px solid #10b981;
+    outline: 2px solid #059669;
     outline-offset: 2px;
+  }
+
+  .dark :focus-visible {
+    outline-color: #34d399;
   }
 
   .dark input,
@@ -41,7 +80,7 @@
   .dark input:-webkit-autofill:hover, 
   .dark input:-webkit-autofill:focus {
     -webkit-text-fill-color: #f8fafc;
-    -webkit-box-shadow: 0 0 0px 1000px #1e293b inset;
+    -webkit-box-shadow: 0 0 0px 1000px #131d31 inset;
     transition: background-color 5000s ease-in-out 0s;
   }
 }
@@ -64,14 +103,78 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Tipografía monoespaciada de alta precisión para cifras, monedas y porcentajes */
 .font-mono-num {
-  font-family: 'JetBrains Mono', monospace;
-  font-feature-settings: "tnum";
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-feature-settings: "tnum" 1, "zero" 1;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
 }
 
 .animate-shake {
   animation: shake 0.4s ease-in-out;
+}
+
+/* ========================================================================= */
+/* MODO ESPÍA / PRIVACIDAD PROFESIONAL (FROSTED GLASS BLUR EFFECT & PEEK)    */
+/* ========================================================================= */
+html.privacy-mode .font-mono-num:not(.no-privacy-blur):not(#screen-lock-barrier *),
+html.privacy-mode .privacy-blur:not(.no-privacy-blur):not(#screen-lock-barrier *),
+html.privacy-mode [data-amount]:not(.no-privacy-blur):not(#screen-lock-barrier *),
+html.privacy-mode [data-private-amount]:not(.no-privacy-blur):not(#screen-lock-barrier *) {
+  filter: blur(7.5px) contrast(0.85);
+  -webkit-filter: blur(7.5px) contrast(0.85);
+  user-select: none;
+  -webkit-user-select: none;
+  transition: filter 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, transform 0.15s ease;
+  will-change: filter;
+  display: inline-block;
+  opacity: 0.85;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+/* Excepción absoluta para la pantalla de bloqueo de PIN y teclado numérico */
+html.privacy-mode #screen-lock-barrier,
+html.privacy-mode #screen-lock-barrier *,
+html.privacy-mode .lockscreen-keypad,
+html.privacy-mode .lockscreen-keypad *,
+html.privacy-mode .no-privacy-blur,
+html.privacy-mode .no-privacy-blur * {
+  filter: none !important;
+  -webkit-filter: none !important;
+  user-select: auto;
+  opacity: 1 !important;
+}
+
+/* Efecto "Peek" (revelado instantáneo y fluido al pasar el cursor o hacer click/focus) */
+html.privacy-mode .font-mono-num:hover,
+html.privacy-mode .privacy-blur:hover,
+html.privacy-mode [data-amount]:hover,
+html.privacy-mode [data-private-amount]:hover,
+html.privacy-mode .font-mono-num:focus-visible,
+html.privacy-mode .privacy-blur:focus-visible,
+html.privacy-mode [data-amount]:focus-visible,
+html.privacy-mode [data-private-amount]:focus-visible {
+  filter: blur(0px) contrast(1) !important;
+  -webkit-filter: blur(0px) contrast(1) !important;
+  opacity: 1 !important;
+  transform: scale(1.02);
+}
+
+/* Desenfocar suavemente los gráficos de Recharts para que las barras/sectores no revelen magnitudes en público */
+html.privacy-mode .recharts-responsive-container,
+html.privacy-mode .recharts-wrapper {
+  filter: blur(6px) opacity(0.85);
+  -webkit-filter: blur(6px) opacity(0.85);
+  transition: filter 0.3s ease, opacity 0.3s ease;
+  user-select: none;
+}
+
+html.privacy-mode .recharts-responsive-container:hover,
+html.privacy-mode .recharts-wrapper:hover {
+  filter: blur(0px) opacity(1);
+  -webkit-filter: blur(0px) opacity(1);
 }
 
 @keyframes shake {
@@ -94,3 +197,127 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.6);
 }
+
+/* ========================================================================= */
+/* ESTILOS DE IMPRESIÓN Y EXPORTACIÓN A PDF OPTIMIZADOS PARA PAPEL           */
+/* ========================================================================= */
+@media print {
+  @page {
+    margin: 12mm 15mm 15mm 15mm;
+    size: A4 portrait;
+  }
+
+  /* 1. Ocultar todos los elementos de navegación, modales, barras y botones flotantes */
+  header,
+  nav,
+  aside,
+  .no-print,
+  #mobile-nav,
+  .no-print-element,
+  button:not(.print-include),
+  [role="tablist"],
+  [role="dialog"]:not(.print-include) {
+    display: none !important;
+  }
+
+  /* 2. Configuración de página e impresión limpia */
+  html, body, #root {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* 3. Desactivar filtros de privacidad/desenfoque para imprimir datos nítidos */
+  html.privacy-mode .font-mono-num,
+  html.privacy-mode .privacy-blur,
+  html.privacy-mode [data-amount],
+  html.privacy-mode [data-private-amount],
+  html.privacy-mode .recharts-responsive-container,
+  html.privacy-mode .recharts-wrapper {
+    filter: none !important;
+    -webkit-filter: none !important;
+    opacity: 1 !important;
+  }
+
+  /* 4. Contenedor del documento imprimible */
+  #printable-report,
+  .print-document {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* 5. Control de saltos de página (evitar cortes antiestéticos en tablas o secciones) */
+  .report-section {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 1.5rem !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto !important;
+  }
+
+  tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  /* 6. Enlaces y elementos tipográficos limpios en papel */
+  a {
+    text-decoration: none !important;
+    color: inherit !important;
+  }
+
+  /* 7. Ajustes de alto contraste y ahorro de tinta */
+  .print-high-contrast {
+    border-color: #334155 !important;
+  }
+
+  .print-high-contrast table,
+  .print-high-contrast th,
+  .print-high-contrast td {
+    border-color: #475569 !important;
+  }
+}
+
+/* Animaciones del Tour Interactivo Guiado */
+@keyframes tour-spotlight-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4), 0 0 0 3px rgba(16, 185, 129, 0.25), 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.65), 0 0 0 12px rgba(16, 185, 129, 0.15), 0 15px 30px -5px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.tour-spotlight-ring {
+  animation: tour-spotlight-pulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+

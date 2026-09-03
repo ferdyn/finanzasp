@@ -21,12 +21,12 @@ export const CustomMonthlyTooltip: React.FC<CustomMonthlyTooltipProps> = ({
   categories,
   accounts,
 }) => {
-  if (!active || !payload || !payload.length) return null;
+  if (!active || !Array.isArray(payload) || payload.length === 0) return null;
   const data = payload[0]?.payload;
   if (!data) return null;
 
-  const topExpenseTxs: Transaction[] = data.topExpenseTxs || [];
-  const topIncomeTxs: Transaction[] = data.topIncomeTxs || [];
+  const topExpenseTxs: Transaction[] = Array.isArray(data.topExpenseTxs) ? data.topExpenseTxs : [];
+  const topIncomeTxs: Transaction[] = Array.isArray(data.topIncomeTxs) ? data.topIncomeTxs : [];
 
   return (
     <div className="bg-slate-900/95 dark:bg-slate-950/95 text-white p-3.5 sm:p-4 rounded-2xl border border-slate-700/80 shadow-2xl backdrop-blur-md min-w-[290px] max-w-[340px] text-xs pointer-events-none z-50">
@@ -137,11 +137,11 @@ export const CustomDailyTooltip: React.FC<CustomDailyTooltipProps> = ({
   categories,
   accounts,
 }) => {
-  if (!active || !payload || !payload.length) return null;
+  if (!active || !Array.isArray(payload) || payload.length === 0) return null;
   const data = payload[0]?.payload;
   if (!data) return null;
 
-  const txs: Transaction[] = data.txs || [];
+  const txs: Transaction[] = Array.isArray(data.txs) ? data.txs : [];
 
   return (
     <div className="bg-slate-900/95 dark:bg-slate-950/95 text-white p-3.5 sm:p-4 rounded-2xl border border-slate-700/80 shadow-2xl backdrop-blur-md min-w-[290px] max-w-[340px] text-xs pointer-events-none z-50">
@@ -235,12 +235,12 @@ export const CustomCategoryPieTooltip: React.FC<CustomCategoryPieTooltipProps> =
   type = 'expense',
   accounts,
 }) => {
-  if (!active || !payload || !payload.length) return null;
+  if (!active || !Array.isArray(payload) || payload.length === 0) return null;
   const data = payload[0]?.payload;
   if (!data) return null;
 
   const isIncome = type === 'income';
-  const transactions: Transaction[] = data.transactions || [];
+  const transactions: Transaction[] = Array.isArray(data.transactions) ? data.transactions : [];
 
   return (
     <div className="bg-slate-900/95 dark:bg-slate-950/95 text-white p-3.5 sm:p-4 rounded-2xl border border-slate-700/80 shadow-2xl backdrop-blur-md min-w-[290px] max-w-[340px] text-xs pointer-events-none z-50">

@@ -16,7 +16,14 @@ function getAiClient(): GoogleGenAI | null {
     return null;
   }
   if (!aiClient) {
-    aiClient = new GoogleGenAI({ apiKey });
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   }
   return aiClient;
 }
@@ -66,12 +73,30 @@ Instrucciones:
 2. Da consejos cuantitativos y accionables adaptados a sus números.
 3. Sé motivador, prudente y profesional. Máximo 3 o 4 párrafos concisos.`;
 
-      const response = await client.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-      });
+      const candidateModels = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.1-flash-lite"];
+      let answer = "";
+      let lastError = null;
 
-      const answer = response.text || "No se pudo generar respuesta.";
+      for (const modelName of candidateModels) {
+        try {
+          const response = await client.models.generateContent({
+            model: modelName,
+            contents: prompt,
+          });
+          if (response?.text) {
+            answer = response.text;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`Model ${modelName} failed, trying next fallback:`, err?.message);
+        }
+      }
+
+      if (!answer) {
+        throw lastError || new Error("No se pudo obtener respuesta de los modelos disponibles");
+      }
+
       return res.json({ answer });
     } catch (error: any) {
       console.error("Error in /api/advisor:", error);

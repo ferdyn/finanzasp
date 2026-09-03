@@ -52,6 +52,8 @@ export interface Transaction {
   tags?: string[];
   isRecurring?: boolean;
   recurringFrequency?: 'monthly' | 'weekly' | 'yearly';
+  createdByUserId?: string;
+  createdByName?: string;
 }
 
 export interface Budget {
@@ -83,6 +85,8 @@ export interface SavingsGoal {
   notes?: string;
 }
 
+export type RecurringFrequency = 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual' | 'yearly';
+
 export interface RecurringBill {
   id: string;
   name: string;
@@ -90,7 +94,7 @@ export interface RecurringBill {
   type: TransactionType;
   categoryId: string;
   accountId: string;
-  frequency: 'weekly' | 'monthly' | 'bimonthly' | 'yearly';
+  frequency: RecurringFrequency;
   nextDueDate: string;
   isActive: boolean;
   reminderDays?: number;

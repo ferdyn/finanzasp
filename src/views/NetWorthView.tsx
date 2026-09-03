@@ -42,10 +42,10 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
             Patrimonio y Cuentas
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Balance general de activos, ahorros, inversiones y pasivos
           </p>
         </div>
@@ -70,7 +70,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
       </div>
 
       {/* Banner Principal de Patrimonio Neto con degradado adaptativo */}
-      <div className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 transition-colors">
+      <div id="networth-hero-card" className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 transition-colors">
         
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>

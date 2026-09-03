@@ -1,7 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
+import { useTour } from '../context/TourContext';
+import { ROLE_DEFINITIONS } from '../types/user';
 import { CURRENCIES, formatMoney } from '../utils/format';
-import { CurrencyCode, RecurringBill, ThemeMode } from '../types/finance';
+import { CurrencyCode, RecurringBill, ThemeMode, RecurringFrequency } from '../types/finance';
+import { getRecurringStatus, formatFrequency } from '../utils/recurring';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { 
   Sliders, DollarSign, Download, Upload, RotateCcw, 
@@ -9,22 +13,33 @@ import {
   Calculator, Shield, Tag, FileText, AlertTriangle,
   Sun, Moon, Monitor, Check, Palette, Zap, ShieldAlert,
   Scissors, ShieldCheck, TrendingDown, ArrowDownRight, Sparkles, RefreshCw,
-  Lock, Fingerprint, KeyRound, Clock
+  Lock, Fingerprint, KeyRound, Clock, Bell, X, Eye, EyeOff, Printer,
+  Users, History, UserPlus, SlidersHorizontal, BookOpen, Compass
 } from 'lucide-react';
 import { useSecurity } from '../context/SecurityContext';
 import { SecurityPinModal } from '../components/SecurityPinModal';
 
 interface SettingsViewProps {
   onOpenCompoundSimulator: () => void;
+  onOpenReports?: () => void;
+  onOpenManual?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimulator }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ 
+  onOpenCompoundSimulator, 
+  onOpenReports, 
+  onOpenManual 
+}) => {
+  const { startTour, resetTour } = useTour();
   const { 
     currency, 
     setCurrency, 
     theme,
     effectiveTheme,
     setTheme,
+    privacyMode,
+    setPrivacyMode,
+    togglePrivacyMode,
     extremeSavingsMode,
     setExtremeSavingsMode,
     toggleCategoryEssential,
@@ -37,7 +52,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
     addCategory, 
     deleteCategory, 
     recurringBills, 
+    addRecurringBill,
     processRecurringBill, 
+    postponeRecurringBill,
     updateRecurringBill, 
     deleteRecurringBill,
     resetToSeedData, 
@@ -45,8 +62,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
     exportDataJSON, 
     importDataJSON,
     exportTransactionsCSV,
-    accounts
+    accounts,
+    getCategoryById,
+    getAccountById
   } = useFinance();
+
+  const {
+    users,
+    currentUser,
+    auditLogs,
+    setIsUserManagementOpen,
+  } = useUser();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string>('');
@@ -100,8 +126,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
   const [newBillType, setNewBillType] = useState<'expense' | 'income'>('expense');
   const [newBillCatId, setNewBillCatId] = useState(categories[0]?.id || '');
   const [newBillAccId, setNewBillAccId] = useState(accounts[0]?.id || '');
-  const [newBillFreq, setNewBillFreq] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+  const [newBillFreq, setNewBillFreq] = useState<RecurringFrequency>('monthly');
+  const [newBillDueDate, setNewBillDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [newBillReminderDays, setNewBillReminderDays] = useState<number>(7);
   const [showAddRecurring, setShowAddRecurring] = useState(false);
+  const [settingsPostponeId, setSettingsPostponeId] = useState<string | null>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -142,19 +171,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
     const amt = parseFloat(newBillAmount.replace(',', '.'));
     if (!newBillName.trim() || isNaN(amt) || amt <= 0) return;
 
-    useFinance().addRecurringBill({
+    addRecurringBill({
       name: newBillName.trim(),
       amount: amt,
       type: newBillType,
-      categoryId: newBillCatId || categories[0].id,
-      accountId: newBillAccId || accounts[0].id,
+      categoryId: newBillCatId || categories[0]?.id || '',
+      accountId: newBillAccId || accounts[0]?.id || '',
       frequency: newBillFreq,
-      nextDueDate: new Date().toISOString().split('T')[0],
+      nextDueDate: newBillDueDate || new Date().toISOString().split('T')[0],
+      reminderDays: newBillReminderDays || 7,
       isActive: true,
     });
 
     setNewBillName('');
     setNewBillAmount('');
+    setNewBillDueDate(new Date().toISOString().split('T')[0]);
+    setNewBillReminderDays(7);
     setShowAddRecurring(false);
   };
 
@@ -184,10 +216,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
       
       {/* Header */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
           Ajustes y Configuración
         </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
           Personaliza tu apariencia, moneda, movimientos recurrentes, copias de seguridad y categorías
         </p>
       </div>
@@ -205,6 +237,159 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
 
       {/* Grid de Secciones */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* ========================================================================= */}
+        {/* MULTIUSUARIO, ROLES (RBAC) & HISTORIAL DE AUDITORÍA                      */}
+        {/* ========================================================================= */}
+        <div id="settings-user-roles-card" className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all lg:col-span-2 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 shadow-xs">
+                <Users className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-extrabold text-lg sm:text-xl text-slate-900 dark:text-white tracking-tight">
+                    Gestión Multiusuario & Control de Accesos (RBAC)
+                  </h3>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80">
+                    {users.length} miembros registrados
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium mt-0.5 max-w-2xl">
+                  Administra los roles del sistema (Administrador, Gestor, Miembro, Dependiente, Auditor), define permisos granulares por acción y consulta el registro de trazabilidad.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+              <button
+                type="button"
+                id="settings-open-user-management-btn"
+                onClick={() => setIsUserManagementOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Gestionar Roles & Permisos</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tarjetas de miembros activos */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+            {users.map(u => {
+              const rDef = ROLE_DEFINITIONS[u.role] || ROLE_DEFINITIONS.member;
+              const isMe = u.id === currentUser.id;
+
+              return (
+                <div
+                  key={u.id}
+                  className={`p-3 rounded-xl border flex items-center gap-2.5 transition-all ${
+                    isMe
+                      ? 'border-indigo-400 dark:border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/30 ring-1 ring-indigo-400/40'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40'
+                  }`}
+                >
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 shadow-2xs"
+                    style={{ backgroundColor: `${u.color}25` }}
+                  >
+                    {u.avatar}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                        {u.name}
+                      </span>
+                      {isMe && (
+                        <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                          (Tú)
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 block truncate">
+                      {rDef.name} • {u.department || 'General'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Barra inferior de resumen del historial */}
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+              <History className="w-4 h-4 text-indigo-500 shrink-0" />
+              <span>
+                <strong>{auditLogs.length} eventos</strong> registrados en la auditoría inmutable de actividades.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Rol actual: <strong>{ROLE_DEFINITIONS[currentUser.role]?.name}</strong>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* MANUAL DE USUARIO & GUÍA INTERACTIVA (ONBOARDING)                        */}
+        {/* ========================================================================= */}
+        <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md transition-all lg:col-span-2 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 shadow-xs">
+                <BookOpen className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-extrabold text-lg sm:text-xl text-slate-900 dark:text-white tracking-tight">
+                    Manual de Usuario & Tour Interactivo
+                  </h3>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80">
+                    Guía Paso a Paso
+                  </span>
+                </div>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 font-medium mt-0.5 max-w-2xl">
+                  Accede a la documentación completa de todas las 12 áreas del sistema, consulta la matriz de permisos por roles, resuelve dudas en el glosario o reinicia el tour interactivo de bienvenida.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+              {onOpenManual && (
+                <button
+                  type="button"
+                  id="settings-open-manual-btn"
+                  onClick={onOpenManual}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Ver Manual Completo</span>
+                </button>
+              )}
+              <button
+                type="button"
+                id="settings-start-tour-btn"
+                onClick={() => startTour(0)}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5"
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span>Iniciar Tour Guiado</span>
+              </button>
+              <button
+                type="button"
+                id="settings-reset-tour-btn"
+                onClick={resetTour}
+                className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1.5"
+                title="Borra la marca de completado y reinicia el tour"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reiniciar Guía</span>
+              </button>
+            </div>
+          </div>
+        </div>
         
         {/* ========================================================================= */}
         {/* MODO DE AHORRO EXTREMO                                                    */}
@@ -661,6 +846,122 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
         </div>
 
         {/* ========================================================================= */}
+        {/* MODO ESPÍA / PRIVACIDAD EN LUGARES PÚBLICOS                                */}
+        {/* ========================================================================= */}
+        <div className={`p-5 sm:p-6 rounded-2xl border transition-all duration-300 lg:col-span-2 ${
+          privacyMode
+            ? 'bg-gradient-to-br from-amber-950/40 via-slate-900 to-amber-900/20 border-amber-500/50 shadow-md text-white'
+            : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 shadow-sm'
+        }`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm transition-transform ${
+                privacyMode
+                  ? 'bg-amber-500 text-white shadow-amber-500/30 ring-4 ring-amber-500/20'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+              }`}>
+                {privacyMode ? <EyeOff className="w-6 h-6 stroke-[2.5]" /> : <Eye className="w-6 h-6" />}
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className={`font-extrabold text-lg sm:text-xl tracking-tight ${privacyMode ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                    Modo Espía & Privacidad en Público
+                  </h3>
+                  {privacyMode ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-white shadow-xs animate-pulse">
+                      <EyeOff className="w-3 h-3" />
+                      MODO ESPÍA ACTIVO (CIFRAS DIFUMINADAS)
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                      DESACTIVADO (CIFRAS VISIBLES)
+                    </span>
+                  )}
+                </div>
+                <p className={`text-xs mt-0.5 ${privacyMode ? 'text-amber-100/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                  Difumina suavemente todas las cifras, saldos y gráficos con un efecto frosted glass profesional de alta seguridad para evitar miradas indiscretas en lugares públicos.
+                </p>
+              </div>
+            </div>
+
+            {/* Switch Principal de Modo Espía */}
+            <div className="flex items-center gap-3 self-end sm:self-auto">
+              <span className={`text-xs font-bold ${privacyMode ? 'text-amber-400' : 'text-slate-500'}`}>
+                {privacyMode ? 'Modo Espía Activado' : 'Activar Modo Espía'}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={privacyMode}
+                onClick={togglePrivacyMode}
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 ${
+                  privacyMode ? 'bg-amber-500' : 'bg-slate-200 dark:bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    privacyMode ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Atajos y detalles informativos */}
+          <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+              privacyMode 
+                ? 'bg-slate-800/80 border-slate-700/80 text-slate-200' 
+                : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+            }`}>
+              <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-500 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Eye className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold">Botón en la Cabecera</div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">Icono del ojo arriba a la derecha</div>
+              </div>
+            </div>
+
+            <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+              privacyMode 
+                ? 'bg-slate-800/80 border-slate-700/80 text-slate-200' 
+                : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+            }`}>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-500 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <span className="text-xs font-black">⌨️</span>
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold">Atajo de Teclado</div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Presiona <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-mono text-[10px] font-bold">Alt + P</kbd>
+                </div>
+              </div>
+            </div>
+
+            <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+              privacyMode 
+                ? 'bg-slate-800/80 border-slate-700/80 text-slate-200' 
+                : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+            }`}>
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-500 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold">Efecto Peek (Mirada Rápida)</div>
+                <div className="text-xs font-mono font-bold text-amber-500 dark:text-amber-400 flex items-center gap-1.5">
+                  <span className="font-mono-num font-bold cursor-pointer" title="Pasa el cursor por encima para ver el efecto Peek">
+                    {formatMoney(1450.00, currency)}
+                  </span>
+                  <span className="text-[10px] font-normal text-slate-400 font-sans hidden sm:inline">(Pasa el cursor)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
         {/* SEGURIDAD Y BLOQUEO DE PANTALLA (PIN Y WEBAUTHN / BIOMETRÍA)              */}
         {/* ========================================================================= */}
         <div className={`p-5 sm:p-6 rounded-2xl border transition-all duration-300 lg:col-span-2 ${
@@ -970,47 +1271,128 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
 
           {/* Formulario Añadir Recurrente */}
           {showAddRecurring && (
-            <form onSubmit={handleAddRecurringSubmit} className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+            <form onSubmit={handleAddRecurringSubmit} className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 animate-in fade-in duration-200">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Nuevo Movimiento Periódico</h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  value={newBillName}
-                  onChange={(e) => setNewBillName(e.target.value)}
-                  placeholder="Nombre (ej. Seguro coche, Gimnasio)..."
-                  className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={newBillAmount}
-                  onChange={(e) => setNewBillAmount(e.target.value)}
-                  placeholder="Importe (ej. 45.00)"
-                  className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono-num text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  required
-                />
-                <select
-                  value={newBillType}
-                  onChange={(e) => setNewBillType(e.target.value as any)}
-                  className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="expense">Gasto Recurrente</option>
-                  <option value="income">Ingreso Recurrente</option>
-                </select>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Nombre</label>
+                  <input
+                    type="text"
+                    value={newBillName}
+                    onChange={(e) => setNewBillName(e.target.value)}
+                    placeholder="Ej. Alquiler, Gimnasio, Spotify..."
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Importe</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={newBillAmount}
+                    onChange={(e) => setNewBillAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono-num text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Tipo</label>
+                  <select
+                    value={newBillType}
+                    onChange={(e) => setNewBillType(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="expense">Gasto Recurrente</option>
+                    <option value="income">Ingreso Recurrente</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Frecuencia</label>
+                  <select
+                    value={newBillFreq}
+                    onChange={(e) => setNewBillFreq(e.target.value as RecurringFrequency)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="weekly">Semanal</option>
+                    <option value="biweekly">Quincenal (cada 2 semanas)</option>
+                    <option value="monthly">Mensual</option>
+                    <option value="bimonthly">Bimestral (cada 2 meses)</option>
+                    <option value="quarterly">Trimestral</option>
+                    <option value="semiannual">Semestral</option>
+                    <option value="yearly">Anual</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Próximo Vencimiento</label>
+                  <input
+                    type="date"
+                    value={newBillDueDate}
+                    onChange={(e) => setNewBillDueDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Avisar con antelación</label>
+                  <select
+                    value={newBillReminderDays}
+                    onChange={(e) => setNewBillReminderDays(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value={1}>1 día antes</option>
+                    <option value={3}>3 días antes</option>
+                    <option value={5}>5 días antes</option>
+                    <option value={7}>7 días antes (Recomendado)</option>
+                    <option value={10}>10 días antes</option>
+                    <option value={15}>15 días antes</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Categoría</label>
+                  <select
+                    value={newBillCatId}
+                    onChange={(e) => setNewBillCatId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {categories.filter(c => c.type === newBillType).map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Cuenta asociada</label>
+                  <select
+                    value={newBillAccId}
+                    onChange={(e) => setNewBillAccId(e.target.value)}
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {accounts.map(a => (
+                      <option key={a.id} value={a.id}>{a.name} ({formatMoney(a.balance, currency)})</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
                 <button
                   type="button"
                   onClick={() => setShowAddRecurring(false)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg text-xs font-bold bg-slate-900 dark:bg-emerald-600 text-white hover:bg-slate-800 dark:hover:bg-emerald-700 shadow"
+                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-all"
                 >
                   Guardar Periódico
                 </button>
@@ -1020,46 +1402,124 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
 
           {/* Lista de Recurrentes */}
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {recurringBills.map((bill) => (
-              <div key={bill.id} className="py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white ${
-                    bill.type === 'income' ? 'bg-emerald-500' : 'bg-red-500'
-                  }`}>
-                    {bill.type === 'income' ? '+' : '-'}
-                  </div>
-                  <div>
-                    <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 leading-snug">{bill.name}</p>
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500 capitalize">
-                      {bill.frequency === 'monthly' ? 'Mensual' : bill.frequency === 'weekly' ? 'Semanal' : 'Anual'} • Próximo: {bill.nextDueDate}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold font-mono-num text-slate-900 dark:text-white">
-                    {formatMoney(bill.amount, currency)}
-                  </span>
-                  
-                  <button
-                    onClick={() => processRecurringBill(bill.id)}
-                    className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors flex items-center gap-1"
-                    title="Registrar ahora como movimiento"
-                  >
-                    <Play className="w-3 h-3" />
-                    <span className="hidden sm:inline">Pagar / Cobrar</span>
-                  </button>
-
-                  <button
-                    onClick={() => deleteRecurringBill(bill.id)}
-                    className="p-1 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"
-                    title="Eliminar"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+            {recurringBills.length === 0 ? (
+              <div className="text-center py-6 text-slate-400 text-xs">
+                No tienes pagos o cobros recurrentes registrados.
               </div>
-            ))}
+            ) : (
+              recurringBills.map((bill) => {
+                const status = getRecurringStatus(bill.nextDueDate, bill.reminderDays || 7);
+                const category = getCategoryById(bill.categoryId);
+                const account = getAccountById(bill.accountId);
+                const isExpense = bill.type === 'expense';
+                const isMenuOpen = settingsPostponeId === bill.id;
+
+                return (
+                  <div key={bill.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs"
+                        style={{ backgroundColor: category?.color || (isExpense ? '#ef4444' : '#10b981') }}
+                      >
+                        <DynamicIcon name={category?.icon || (isExpense ? 'CreditCard' : 'Wallet')} size={16} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-200 leading-snug">{bill.name}</p>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${status.badgeBg} ${status.badgeText} ${status.badgeBorder}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${status.dotColor}`} />
+                            <span>{status.label}</span>
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                          {formatFrequency(bill.frequency)} • Próximo: {bill.nextDueDate} {account ? `• ${account.name}` : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-2.5">
+                      <span className={`text-sm font-black font-mono-num ${
+                        isExpense ? 'text-slate-900 dark:text-white' : 'text-emerald-600 dark:text-emerald-400'
+                      }`}>
+                        {isExpense ? '-' : '+'}{formatMoney(bill.amount, currency)}
+                      </span>
+                      
+                      {/* Botón Pagar / Cobrar */}
+                      <button
+                        type="button"
+                        onClick={() => processRecurringBill(bill.id)}
+                        className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800 transition-colors flex items-center gap-1"
+                        title="Registrar ahora como movimiento y avanzar ciclo"
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>{isExpense ? 'Pagar' : 'Cobrar'}</span>
+                      </button>
+
+                      {/* Menú Posponer */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setSettingsPostponeId(isMenuOpen ? null : bill.id)}
+                          className="px-2 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-semibold rounded-xl transition-colors border border-slate-200 dark:border-slate-700 flex items-center gap-1"
+                          title="Posponer fecha de vencimiento"
+                        >
+                          <Clock className="w-3 h-3" />
+                          <span className="hidden sm:inline">Posponer</span>
+                        </button>
+
+                        {isMenuOpen && (
+                          <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 duration-150">
+                            <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              Posponer
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                postponeRecurringBill(bill.id, 3);
+                                setSettingsPostponeId(null);
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              +3 días
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                postponeRecurringBill(bill.id, 7);
+                                setSettingsPostponeId(null);
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              +1 semana (7d)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                postponeRecurringBill(bill.id, 15);
+                                setSettingsPostponeId(null);
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            >
+                              +15 días
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Eliminar */}
+                      <button
+                        type="button"
+                        onClick={() => deleteRecurringBill(bill.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                        title="Eliminar este recordatorio recurrente"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -1075,7 +1535,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenCompoundSimula
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
+            {onOpenReports && (
+              <button
+                type="button"
+                onClick={onOpenReports}
+                className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 rounded-xl border border-emerald-300 dark:border-emerald-800 text-left transition-colors flex items-center gap-3 group"
+              >
+                <Printer className="w-5 h-5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+                <div>
+                  <span className="block text-xs font-bold text-emerald-900 dark:text-emerald-200">Reporte e Impresión PDF</span>
+                  <span className="block text-[10px] text-emerald-700 dark:text-emerald-400">Balance contable oficial optimizado para papel</span>
+                </div>
+              </button>
+            )}
+
             <button
               onClick={exportDataJSON}
               className="p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-left transition-colors flex items-center gap-3 group"

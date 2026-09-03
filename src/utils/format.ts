@@ -11,6 +11,16 @@ export const CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
   GBP: { code: 'GBP', symbol: '£', name: 'Libra Esterlina (GBP)', position: 'before', decimals: 2 },
 };
 
+let _globalPrivacyMode = false;
+
+export function setGlobalPrivacyMode(enabled: boolean): void {
+  _globalPrivacyMode = enabled;
+}
+
+export function getGlobalPrivacyMode(): boolean {
+  return _globalPrivacyMode;
+}
+
 export function formatMoney(amount: number, currencyCode: CurrencyCode = 'EUR'): string {
   const config = CURRENCIES[currencyCode] || CURRENCIES.EUR;
   const isNegative = amount < 0;
@@ -75,6 +85,14 @@ export function formatMonthPeriod(period: string): string {
   if (!year || !month) return period;
   const date = new Date(year, month - 1, 1);
   const monthName = date.toLocaleDateString('es-ES', { month: 'long' });
+  return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${year}`;
+}
+
+export function formatMonthPeriodShort(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  if (!year || !month) return period;
+  const date = new Date(year, month - 1, 1);
+  const monthName = date.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
   return `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${year}`;
 }
 

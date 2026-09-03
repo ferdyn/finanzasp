@@ -52,7 +52,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
     const isWarning = hasBudget && !isExceeded && spent >= (limit * (budget?.alertThreshold || 85)) / 100;
     const isAutoRenew = budget ? budget.autoRenew !== false : false;
     const isEssential = isCategoryEssential(cat.id);
-    const suggestion = extremeSavingsAnalysis.suggestions.find(s => s.categoryId === cat.id);
+    const suggestion = extremeSavingsAnalysis?.suggestions?.find(s => s.categoryId === cat.id);
 
     return {
       category: cat,
@@ -105,10 +105,10 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-800 dark:text-slate-100 tracking-tight">
             Presupuestos Mensuales
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Límites de gasto y control para <span className="text-slate-800 dark:text-slate-200 font-semibold">{formatMonthPeriod(selectedPeriod)}</span>
           </p>
         </div>
@@ -210,7 +210,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                 </button>
               )}
 
-              {extremeSavingsAnalysis.suggestions.length > 0 && (
+              {(extremeSavingsAnalysis?.suggestions?.length || 0) > 0 && (
                 <button
                   type="button"
                   onClick={() => {
@@ -221,16 +221,16 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                   className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/30 transition-all flex items-center gap-1.5 hover:scale-102"
                 >
                   <Scissors className="w-3.5 h-3.5" />
-                  <span>Aplicar Todos los Recortes ({extremeSavingsAnalysis.suggestions.length})</span>
+                  <span>Aplicar Todos los Recortes ({extremeSavingsAnalysis?.suggestions?.length || 0})</span>
                 </button>
               )}
             </div>
           </div>
 
           {/* Carrusel / Grid de sugerencias inmediatas */}
-          {extremeSavingsAnalysis.suggestions.length > 0 && (
+          {(extremeSavingsAnalysis?.suggestions?.length || 0) > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 border-t border-amber-200/50 dark:border-amber-800/50">
-              {extremeSavingsAnalysis.suggestions.map((sugg) => {
+              {(extremeSavingsAnalysis?.suggestions || []).map((sugg) => {
                 const isApplied = sugg.currentLimit > 0 && sugg.currentLimit <= sugg.suggestedLimit;
 
                 return (
@@ -300,7 +300,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
       )}
 
       {/* Banner Resumen Global con degradado adaptativo */}
-      <div className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 space-y-5 transition-colors">
+      <div id="budgets-summary-banner" className="bg-gradient-to-br from-white via-slate-50 to-slate-100/80 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 text-slate-900 dark:text-white p-6 sm:p-8 rounded-3xl shadow-md shadow-slate-200/50 dark:shadow-xl dark:shadow-slate-900/20 relative overflow-hidden border border-slate-200/80 dark:border-slate-800 space-y-5 transition-colors">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <span className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Total Presupuestado del Mes</span>
@@ -526,7 +526,11 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                     </div>
                     
                     <p className="text-xs text-slate-400 dark:text-slate-500 font-medium mt-0.5">
-                      {hasBudget ? `Límite: ${formatMoney(limit, currency)}/mes` : 'Sin límite fijado'}
+                      {hasBudget ? (
+                        <>Límite: <span className="font-mono-num font-semibold">{formatMoney(limit, currency)}</span>/mes</>
+                      ) : (
+                        'Sin límite fijado'
+                      )}
                     </p>
 
                     {/* Indicador de Reinicio Automático */}
@@ -571,7 +575,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                   <div className="space-y-0.5 min-w-0">
                     <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-200">
                       <Scissors className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      <span>Recorte sugerido: {formatMoney(suggestion.suggestedLimit, currency)} (-{suggestion.cutPercent}%)</span>
+                      <span>Recorte sugerido: <span className="font-mono-num">{formatMoney(suggestion.suggestedLimit, currency)}</span> (-{suggestion.cutPercent}%)</span>
                     </div>
                     <p className="text-[11px] text-amber-700 dark:text-amber-400 truncate">
                       {suggestion.reason}
@@ -634,16 +638,16 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                     {isExceeded ? (
                       <span className="text-red-600 dark:text-red-400 font-bold flex items-center gap-1">
                         <AlertCircle className="w-3.5 h-3.5" />
-                        Excedido por {formatMoney(overspent, currency)}
+                        Excedido por <span className="font-mono-num">{formatMoney(overspent, currency)}</span>
                       </span>
                     ) : isWarning ? (
                       <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
                         <AlertTriangle className="w-3.5 h-3.5" />
-                        Quedan {formatMoney(remaining, currency)} (Cerca del límite)
+                        Quedan <span className="font-mono-num">{formatMoney(remaining, currency)}</span> (Cerca del límite)
                       </span>
                     ) : (
                       <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
-                        Disponible: {formatMoney(remaining, currency)}
+                        Disponible: <span className="font-mono-num">{formatMoney(remaining, currency)}</span>
                       </span>
                     )}
                   </div>
@@ -651,7 +655,7 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
               ) : (
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                   <span className="text-xs text-slate-500 dark:text-slate-400">
-                    Gastado este mes: <strong className="text-slate-700 dark:text-slate-200">{formatMoney(spent, currency)}</strong>
+                    Gastado este mes: <strong className="text-slate-700 dark:text-slate-200 font-mono-num">{formatMoney(spent, currency)}</strong>
                   </span>
                   <button
                     onClick={() => onOpenBudgetModal(category.id)}
