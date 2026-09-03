@@ -49,6 +49,7 @@ export const AuditHistoryView: React.FC = () => {
 
   const canExport = hasPermission('canExportReports');
   const canClear = hasPermission('canClearAuditLog');
+  const canManageUsers = hasPermission('canManageUsers') || hasPermission('canEditRolePermissions');
 
   // Toggle expansión de detalles
   const toggleExpand = (id: string) => {
@@ -263,14 +264,16 @@ export const AuditHistoryView: React.FC = () => {
             </>
           )}
 
-          <button
-            id="manage-roles-from-audit-btn"
-            onClick={() => setIsUserManagementOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-colors"
-          >
-            <Shield size={14} />
-            <span>Usuarios & Permisos</span>
-          </button>
+          {canManageUsers && (
+            <button
+              id="manage-roles-from-audit-btn"
+              onClick={() => setIsUserManagementOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-colors"
+            >
+              <Shield size={14} />
+              <span>Usuarios & Permisos</span>
+            </button>
+          )}
 
           {canClear && auditLogs.length > 0 && (
             <button

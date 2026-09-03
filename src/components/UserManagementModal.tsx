@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   UserCheck,
   UserX,
+  ShieldAlert,
 } from 'lucide-react';
 
 const AVATAR_OPTIONS = ['👑', '💼', '👤', '🎓', '📊', '🚀', '🧑‍💻', '👩‍💼', '👨‍🎨', '💎', '🌟', '🛡️'];
@@ -62,6 +63,33 @@ export const UserManagementModal: React.FC = () => {
 
   const canManageUsers = hasPermission('canManageUsers');
   const canEditRoles = hasPermission('canEditRolePermissions');
+
+  if (!canManageUsers && !canEditRoles) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-rose-200 dark:border-rose-900/50 p-6 text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto shadow-xs">
+            <ShieldAlert size={28} />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Acceso Restringido
+            </h3>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5 leading-relaxed">
+              Tu rol actual (<strong>{ROLE_DEFINITIONS[currentUser.role]?.name || currentUser.role}</strong>) no tiene autorización para acceder a la gestión de usuarios ni alterar las políticas de seguridad.
+            </p>
+          </div>
+          <button
+            id="close-access-denied-btn"
+            onClick={() => setIsUserManagementOpen(false)}
+            className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-semibold shadow-xs transition-colors"
+          >
+            Entendido y Volver
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleOpenAdd = () => {
     setEditingUserId(null);
@@ -202,31 +230,35 @@ export const UserManagementModal: React.FC = () => {
             <span>Miembros & Cuentas ({users.length})</span>
           </button>
 
-          <button
-            id="tab-roles-matrix"
-            onClick={() => setActiveTab('roles')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all ${
-              activeTab === 'roles'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            <Shield size={15} />
-            <span>Matriz de Permisos por Rol</span>
-          </button>
+          {canEditRoles && (
+            <button
+              id="tab-roles-matrix"
+              onClick={() => setActiveTab('roles')}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all ${
+                activeTab === 'roles'
+                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Shield size={15} />
+              <span>Matriz de Permisos por Rol</span>
+            </button>
+          )}
 
-          <button
-            id="tab-user-overrides"
-            onClick={() => setActiveTab('overrides')}
-            className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all ${
-              activeTab === 'overrides'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            <Sliders size={15} />
-            <span>Permisos por Usuario</span>
-          </button>
+          {canEditRoles && (
+            <button
+              id="tab-user-overrides"
+              onClick={() => setActiveTab('overrides')}
+              className={`flex items-center gap-2 py-3 px-4 text-xs font-semibold border-b-2 transition-all ${
+                activeTab === 'overrides'
+                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Sliders size={15} />
+              <span>Permisos por Usuario</span>
+            </button>
+          )}
         </div>
 
         {/* Contenido según pestaña */}
@@ -525,7 +557,7 @@ export const UserManagementModal: React.FC = () => {
           )}
 
           {/* TAB 2: MATRIZ DE PERMISOS POR ROL */}
-          {activeTab === 'roles' && (
+          {activeTab === 'roles' && canEditRoles && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div>
@@ -643,7 +675,7 @@ export const UserManagementModal: React.FC = () => {
           )}
 
           {/* TAB 3: SOBRESCRITURA DE PERMISOS POR USUARIO */}
-          {activeTab === 'overrides' && (
+          {activeTab === 'overrides' && canEditRoles && (
             <div className="space-y-6">
               <div className="pb-3 border-b border-slate-100 dark:border-slate-800">
                 <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">

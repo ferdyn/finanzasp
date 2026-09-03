@@ -26,13 +26,18 @@ import { AccountModal } from './components/AccountModal';
 import { BudgetModal } from './components/BudgetModal';
 import { GoalModal } from './components/GoalModal';
 import { CompoundInterestModal } from './components/CompoundInterestModal';
+import { FraudAlertModal } from './components/FraudAlertModal';
+import { KycVerificationModal } from './components/KycVerificationModal';
+import { MfaChallengeModal } from './components/MfaChallengeModal';
+import { SecurityPinModal } from './components/SecurityPinModal';
+import { FraudAlertData, KycVerificationData } from './types/digitalCards';
 
 import { Account, SavingsGoal, Transaction } from './types/finance';
 import { EyeOff } from 'lucide-react';
 
 function MainLayout() {
-  const { transactions, privacyMode, togglePrivacyMode } = useFinance();
-  const { isLocked } = useSecurity();
+  const { transactions, privacyMode, togglePrivacyMode, currency } = useFinance();
+  const { isLocked, hasPin } = useSecurity();
   const [activeTab, setActiveTab] = useState<string>('resumen');
 
   // Reseteo inmediato y seguro del scroll a la parte superior al cambiar de pestaña
@@ -81,6 +86,31 @@ function MainLayout() {
 
   const [isCompoundModalOpen, setIsCompoundModalOpen] = useState(false);
 
+  // Security and Compliance Modals
+  const [isFraudModalOpen, setIsFraudModalOpen] = useState(false);
+  const [fraudAlertData, setFraudAlertData] = useState<FraudAlertData | null>({
+    id: 'fraud_sim_01',
+    cardLastFour: '4242',
+    merchantName: 'CryptoExchange Global Inc (London)',
+    amount: 850.00,
+    currency: 'EUR',
+    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    location: 'Londres, Reino Unido (IP Anómala)',
+    category: 'Finanzas / Cripto',
+    riskReason: 'Transacción internacional inusual fuera del horario habitual y sin 3D Secure previo.',
+  });
+
+  const [isKycModalOpen, setIsKycModalOpen] = useState(false);
+  const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
+  const [mfaActionDetails, setMfaActionDetails] = useState<{ title: string; desc: string; callback: () => void }>({
+    title: 'Operación Financiera Protegida',
+    desc: 'Confirma la autenticación de dos factores (2FA / SCA) para continuar.',
+    callback: () => {},
+  });
+
+  const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
+  const [pinPromptCallback, setPinPromptCallback] = useState<(() => void) | null>(null);
+
   // Handlers
   const handleOpenNewTransaction = () => {
     setTxToEdit(null);
@@ -118,6 +148,26 @@ function MainLayout() {
     setIsGoalModalOpen(true);
   };
 
+  const handleTriggerFraudAlert = (data?: FraudAlertData) => {
+    if (data) setFraudAlertData(data);
+    setIsFraudModalOpen(true);
+  };
+
+  const handleTriggerMfaChallenge = (title: string, desc: string, callback: () => void) => {
+    setMfaActionDetails({ title, desc, callback });
+    setIsMfaModalOpen(true);
+  };
+
+  const handleOpenSecurityPinPrompt = (onSuccess: () => void) => {
+    if (hasPin) {
+      setPinPromptCallback(() => onSuccess);
+      setIsPinPromptOpen(true);
+    } else {
+      // Si no hay PIN configurado, permitir directamente
+      onSuccess();
+    }
+  };
+
   return (
     <TourProvider onNavigateTab={handleTabChange}>
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white transition-colors duration-200">
@@ -126,6 +176,8 @@ function MainLayout() {
           onOpenNewTransaction={handleOpenNewTransaction}
           activeTab={activeTab}
           setActiveTab={handleTabChange}
+          onOpenKyc={() => setIsKycModalOpen(true)}
+          onTriggerFraudAlert={() => handleTriggerFraudAlert()}
         />
 
         {/* Main Navigation (Tabs on desktop, bottom bar on mobile) */}
@@ -168,6 +220,7 @@ function MainLayout() {
               onOpenAccountModal={handleOpenAccountModal}
               onOpenNewTransaction={handleOpenNewTransaction}
               onOpenCompoundSimulator={() => setIsCompoundModalOpen(true)}
+              onOpenSecurityPinPrompt={handleOpenSecurityPinPrompt}
             />
           )}
 
@@ -203,6 +256,9 @@ function MainLayout() {
               onOpenCompoundSimulator={() => setIsCompoundModalOpen(true)}
               onOpenReports={() => handleTabChange('reportes')}
               onOpenManual={() => handleTabChange('manual')}
+              onOpenKyc={() => setIsKycModalOpen(true)}
+              onTriggerFraudAlert={() => handleTriggerFraudAlert()}
+              onTriggerMfaChallenge={(title, desc, cb) => handleTriggerMfaChallenge(title, desc, cb)}
             />
           )}
 
@@ -246,6 +302,56 @@ function MainLayout() {
         />
 
         <UserManagementModal />
+
+        {/* Modales de Seguridad, PSD2 / SCA y Compliance */}
+        <FraudAlertModal
+          isOpen={isFraudModalOpen}
+          alert={fraudAlertData}
+          onClose={() => setIsFraudModalOpen(false)}
+          onApprove={(alertId) => {
+            console.log('Transacción aprobada por el usuario:', alertId);
+          }}
+          onBlockCard={(alertId, lastFour) => {
+            console.log('Tarjeta bloqueada por seguridad:', lastFour);
+          }}
+        />
+
+        <KycVerificationModal
+          isOpen={isKycModalOpen}
+          onClose={() => setIsKycModalOpen(false)}
+          onComplete={(kycData) => {
+            try {
+              localStorage.setItem('finantrack_kyc_completed', 'true');
+            } catch {}
+            setIsKycModalOpen(false);
+          }}
+        />
+
+        <MfaChallengeModal
+          isOpen={isMfaModalOpen}
+          actionTitle={mfaActionDetails.title}
+          actionDescription={mfaActionDetails.desc}
+          onClose={() => setIsMfaModalOpen(false)}
+          onSuccess={() => {
+            mfaActionDetails.callback();
+          }}
+        />
+
+        <SecurityPinModal
+          isOpen={isPinPromptOpen}
+          mode="unlock"
+          onClose={() => {
+            setIsPinPromptOpen(false);
+            setPinPromptCallback(null);
+          }}
+          onSuccess={() => {
+            setIsPinPromptOpen(false);
+            if (pinPromptCallback) {
+              pinPromptCallback();
+              setPinPromptCallback(null);
+            }
+          }}
+        />
 
         {/* Guía Interactiva y Bienvenida */}
         <InteractiveTour />

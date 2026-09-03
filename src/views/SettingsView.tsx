@@ -23,12 +23,18 @@ interface SettingsViewProps {
   onOpenCompoundSimulator: () => void;
   onOpenReports?: () => void;
   onOpenManual?: () => void;
+  onOpenKyc?: () => void;
+  onTriggerFraudAlert?: () => void;
+  onTriggerMfaChallenge?: (title: string, desc: string, callback: () => void) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ 
   onOpenCompoundSimulator, 
   onOpenReports, 
-  onOpenManual 
+  onOpenManual,
+  onOpenKyc,
+  onTriggerFraudAlert,
+  onTriggerMfaChallenge,
 }) => {
   const { startTour, resetTour } = useTour();
   const { 
@@ -75,7 +81,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     hasPermission,
   } = useUser();
 
-  const canManageUsers = hasPermission('canManageUsers');
+  const canManageUsers = hasPermission('canManageUsers') || hasPermission('canEditRolePermissions');
   const canManageRecurring = hasPermission('canManageRecurring');
   const canManageCategories = hasPermission('canManageCategories');
   const canCreateTransactions = hasPermission('canCreateTransactions');
@@ -1204,6 +1210,103 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
             </div>
           )}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* COMPLIANCE NORMATIVO, KYC & SEGURIDAD ESCALONADA (PSD2 / SCA)              */}
+        {/* ========================================================================= */}
+        <div className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs lg:col-span-2 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                <Shield className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-lg sm:text-xl text-slate-900 dark:text-white tracking-tight">
+                    Compliance, Verificación KYC & Anti-Fraude (PSD2)
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    GDPR / PSD2
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Protocolos de autenticación reforzada de clientes (SCA), verificación de identidad de 5 pasos y detección de anomalías transaccionales.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              {onOpenKyc && (
+                <button
+                  type="button"
+                  onClick={onOpenKyc}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Verificación KYC (5 Pasos)</span>
+                </button>
+              )}
+
+              {onTriggerFraudAlert && (
+                <button
+                  type="button"
+                  onClick={onTriggerFraudAlert}
+                  className="px-3.5 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold transition-all flex items-center gap-1.5"
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Probar Alerta de Fraude</span>
+                </button>
+              )}
+
+              {onTriggerMfaChallenge && (
+                <button
+                  type="button"
+                  onClick={() => onTriggerMfaChallenge('Autorización de Transferencia de Alto Valor', 'Por normativa europea PSD2, se requiere un código temporal OTP para autorizar transferencias superiores a 500€.', () => {
+                    setSecurityNotice('¡Autenticación SCA completada con éxito!');
+                    setTimeout(() => setSecurityNotice(''), 3500);
+                  })}
+                  className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>Test Desafío SCA / 2FA</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Tarjetas informativas de cumplimiento */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 space-y-1">
+              <span className="text-[11px] font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                Cifrado Local Criptográfico
+              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Tus datos financieros y hashes de seguridad residen cifrados en tu dispositivo sin subirse a servidores externos no autorizados.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 space-y-1">
+              <span className="text-[11px] font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+                Doble Factor & Biometría
+              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Soporte de autenticación de clientes con WebAuthn, Touch ID, Face ID o desafíos escalonados según el nivel de riesgo de la operación.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 space-y-1">
+              <span className="text-[11px] font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Congelación Instantánea
+              </span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Bloqueo de tarjetas virtuales en 1 solo clic desde la sección de Patrimonio o directamente ante cualquier notificación anómala.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Moneda Principal */}

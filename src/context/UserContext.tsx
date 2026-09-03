@@ -104,7 +104,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Modales de navegación rápida
   const [isUserSwitcherOpen, setIsUserSwitcherOpen] = useState(false);
-  const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
+  const [isUserManagementOpen, setIsUserManagementOpenState] = useState(false);
 
   // Persistir en localStorage
   useEffect(() => {
@@ -215,8 +215,31 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Control de apertura de modal con validación de seguridad
+  const setIsUserManagementOpen = (open: boolean) => {
+    if (open) {
+      const canManage = hasPermission('canManageUsers') || hasPermission('canEditRolePermissions');
+      if (!canManage) {
+        logAction({
+          action: 'PERMISSIONS_UPDATED',
+          category: 'permisos',
+          title: 'Acceso Denegado a Gestión de Usuarios',
+          description: `El usuario "${currentUser.name}" (${ROLE_DEFINITIONS[currentUser.role]?.name || currentUser.role}) intentó acceder al panel de Usuarios & Permisos sin privilegios.`,
+          severity: 'warning',
+        });
+        return;
+      }
+    }
+    setIsUserManagementOpenState(open);
+  };
+
   // Añadir nuevo usuario
   const addUser = (userData: Omit<User, 'id' | 'joinedDate' | 'lastActive'>): User => {
+    if (!hasPermission('canManageUsers')) {
+      alert('Acceso denegado: No cuentas con permisos para añadir o registrar nuevos usuarios.');
+      return currentUser;
+    }
+
     const newUser: User = {
       ...userData,
       id: `user-${Date.now()}`,
@@ -245,6 +268,21 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Actualizar usuario
   const updateUser = (id: string, updates: Partial<User>) => {
+    const isSelf = id === currentUser.id;
+    const isRoleChange = updates.role !== undefined;
+    const isCustomPermChange = updates.customPermissions !== undefined;
+
+    // Solo un administrador/gestor de usuarios o de permisos puede alterar roles o editar a otros
+    if (!isSelf && !hasPermission('canManageUsers') && !hasPermission('canEditRolePermissions')) {
+      alert('Acceso denegado: No tienes permisos para modificar otros usuarios.');
+      return;
+    }
+
+    if ((isRoleChange || isCustomPermChange) && !hasPermission('canEditRolePermissions') && !hasPermission('canManageUsers')) {
+      alert('Acceso denegado: No tienes permisos para alterar roles ni matrices de seguridad.');
+      return;
+    }
+
     const existing = users.find(u => u.id === id);
     if (!existing) return;
 
@@ -269,6 +307,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Eliminar usuario
   const deleteUser = (id: string) => {
+    if (!hasPermission('canManageUsers')) {
+      alert('Acceso denegado: No tienes permisos para eliminar miembros del sistema.');
+      return;
+    }
+
     if (id === 'user-admin' || users.length <= 1) {
       alert('No puedes eliminar el usuario administrador principal o el único usuario del sistema.');
       return;
@@ -300,6 +343,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Activar / Desactivar usuario
   const toggleUserStatus = (id: string) => {
+    if (!hasPermission('canManageUsers')) {
+      alert('Acceso denegado: No tienes permisos para cambiar el estado de los usuarios.');
+      return;
+    }
+
     if (id === 'user-admin') {
       alert('No se puede desactivar la cuenta del Administrador Principal.');
       return;
@@ -313,6 +361,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Actualizar permisos globales de un rol
   const updateRolePermissions = (role: UserRole, permissions: Partial<UserPermissions>) => {
+    if (!hasPermission('canEditRolePermissions')) {
+      alert('Acceso denegado: No tienes permisos para modificar la matriz de roles y permisos.');
+      return;
+    }
+
     setRolePermissions(prev => ({
       ...prev,
       [role]: {
@@ -336,6 +389,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Actualizar permisos personalizados de un usuario
   const updateUserCustomPermissions = (userId: string, permissions: Partial<UserPermissions>) => {
+    if (!hasPermission('canEditRolePermissions') && !hasPermission('canManageUsers')) {
+      alert('Acceso denegado: No tienes permisos para asignar permisos personalizados.');
+      return;
+    }
+
     const target = users.find(u => u.id === userId);
     if (!target) return;
 
@@ -349,6 +407,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Restaurar permisos por defecto
   const resetRolePermissions = (role?: UserRole) => {
+    if (!hasPermission('canEditRolePermissions')) {
+      alert('Acceso denegado: No tienes permisos para restablecer los permisos.');
+      return;
+    }
+
     if (role) {
       setRolePermissions(prev => ({
         ...prev,

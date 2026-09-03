@@ -16,9 +16,17 @@ interface HeaderProps {
   onOpenNewTransaction: () => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onOpenKyc?: () => void;
+  onTriggerFraudAlert?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenNewTransaction, activeTab, setActiveTab }) => {
+export const Header: React.FC<HeaderProps> = ({ 
+  onOpenNewTransaction, 
+  activeTab, 
+  setActiveTab,
+  onOpenKyc,
+  onTriggerFraudAlert,
+}) => {
   const { 
     selectedPeriod, 
     setSelectedPeriod, 
@@ -617,6 +625,52 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTransaction, activeTab,
                       <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     </button>
 
+                    {onOpenKyc && (
+                      <button
+                        type="button"
+                        id="popover-nav-kyc"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onOpenKyc();
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                            <Shield className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Verificación de Identidad (KYC)</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Documentación y validación biométrica</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      </button>
+                    )}
+
+                    {onTriggerFraudAlert && (
+                      <button
+                        type="button"
+                        id="popover-nav-fraud"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onTriggerFraudAlert();
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Simular Alerta de Fraude (PSD2)</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Prueba del sistema de seguridad</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      </button>
+                    )}
+
                     {hasPermission('canViewAuditLog') && (
                       <button
                         type="button"
@@ -748,7 +802,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTransaction, activeTab,
               onClick={() => setActiveTab('manual')}
               aria-label="Abrir Manual de Usuario y Guía Interactiva"
               title="Manual de Usuario & Guía Interactiva"
-              className={`w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 shrink-0 flex items-center justify-center rounded-xl border active:scale-95 transition-all ${
+              className={`hidden sm:flex w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 shrink-0 items-center justify-center rounded-xl border active:scale-95 transition-all ${
                 activeTab === 'manual'
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200/80 dark:border-slate-700 hover:bg-slate-200/80 dark:hover:bg-slate-700'
