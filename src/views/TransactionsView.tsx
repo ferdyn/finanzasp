@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { formatMoney, formatDate } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { 
@@ -10,6 +11,7 @@ import {
 
 import { Transaction } from '../types/finance';
 import { TipAndSplitModal } from '../components/TipAndSplitModal';
+import { TransactionReceiptModal } from '../components/TransactionReceiptModal';
 
 interface TransactionsViewProps {
   onOpenNewTransaction: () => void;
@@ -44,6 +46,10 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
     isCategoryEssential,
     extremeSavingsAnalysis
   } = useFinance();
+  const { hasPermission } = useUser();
+  const canCreateTransactions = hasPermission('canCreateTransactions');
+  const canEditTransactions = hasPermission('canEditTransactions');
+  const canExportReports = hasPermission('canExportReports');
 
   const [isTipSplitModalOpen, setIsTipSplitModalOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -53,6 +59,7 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [filterAccount, setFilterAccount] = useState<string>('all');
   const [filterPeriodOnly, setFilterPeriodOnly] = useState<boolean>(true);
   const [filterEssential, setFilterEssential] = useState<'all' | 'essential' | 'non_essential'>('all');
+  const [selectedTxForReceipt, setSelectedTxForReceipt] = useState<Transaction | null>(null);
 
   // Categorías frecuentes para chips de acceso rápido
   const quickCategories = useMemo(() => {
@@ -183,27 +190,31 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             <span className="sm:hidden">Propinas</span>
           </button>
 
-          <button
-            type="button"
-            onClick={exportTransactionsCSV}
-            aria-label="Exportar transacciones a formato CSV"
-            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold shadow-sm transition-colors active:scale-95"
-            title="Exportar a CSV"
-          >
-            <Download className="w-4 h-4" />
-            <span>Exportar CSV</span>
-          </button>
+          {canExportReports && (
+            <button
+              type="button"
+              onClick={exportTransactionsCSV}
+              aria-label="Exportar transacciones a formato CSV"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[44px] rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold shadow-sm transition-colors active:scale-95"
+              title="Exportar a CSV"
+            >
+              <Download className="w-4 h-4" />
+              <span>Exportar CSV</span>
+            </button>
+          )}
 
-          <button
-            id="btn-new-transaction"
-            type="button"
-            onClick={onOpenNewTransaction}
-            aria-label="Crear nuevo movimiento"
-            className="flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nuevo Movimiento</span>
-          </button>
+          {canCreateTransactions && (
+            <button
+              id="btn-new-transaction"
+              type="button"
+              onClick={onOpenNewTransaction}
+              aria-label="Crear nuevo movimiento"
+              className="flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Movimiento</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -552,14 +563,24 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                         key={tx.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => onEditTransaction(tx.id)}
+                        onClick={() => {
+                          if (canEditTransactions) {
+                            onEditTransaction(tx.id);
+                          } else {
+                            setSelectedTxForReceipt(tx);
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            onEditTransaction(tx.id);
+                            if (canEditTransactions) {
+                              onEditTransaction(tx.id);
+                            } else {
+                              setSelectedTxForReceipt(tx);
+                            }
                           }
                         }}
-                        aria-label={`Editar transacción ${tx.note || cat?.name || 'Movimiento'}, ${formatMoney(tx.amount, currency)}`}
+                        aria-label={`${canEditTransactions ? 'Editar' : 'Ver detalle de'} transacción ${tx.note || cat?.name || 'Movimiento'}, ${formatMoney(tx.amount, currency)}`}
                         className={`flex items-center justify-between py-3.5 px-4 min-h-[56px] cursor-pointer transition-colors group ${
                           extremeSavingsMode && isExpense
                             ? isEssential
@@ -623,10 +644,25 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
                           </div>
                         </div>
 
-                        <div className={`text-sm sm:text-base font-bold font-mono-num text-right ${
-                          isExpense ? 'text-slate-900 dark:text-white' : isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
-                        }`}>
-                          {isExpense ? '-' : isIncome ? '+' : ''}{formatMoney(tx.amount, currency)}
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTxForReceipt(tx);
+                            }}
+                            title="Ver comprobante oficial"
+                            aria-label={`Ver comprobante de ${tx.note || cat?.name || 'movimiento'}`}
+                            className="p-2 rounded-xl text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors opacity-75 group-hover:opacity-100 flex items-center justify-center min-w-[36px] min-h-[36px]"
+                          >
+                            <Receipt className="w-4 h-4" />
+                          </button>
+
+                          <div className={`text-sm sm:text-base font-bold font-mono-num tabular-nums text-right ${
+                            isExpense ? 'text-rose-600 dark:text-rose-400' : isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
+                          }`}>
+                            {isExpense ? '-' : isIncome ? '+' : '↔'}{formatMoney(tx.amount, currency)}
+                          </div>
                         </div>
                       </div>
                     );
@@ -636,6 +672,15 @@ export const TransactionsView: React.FC<TransactionsViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Modal de Comprobante Financiero (Regla UX/UI p. 4) */}
+      {selectedTxForReceipt && (
+        <TransactionReceiptModal
+          isOpen={true}
+          transaction={selectedTxForReceipt}
+          onClose={() => setSelectedTxForReceipt(null)}
+        />
       )}
 
       {/* Modal de Calculadora de Propinas y División de Gastos */}

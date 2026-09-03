@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { formatMoney, formatMonthPeriod, getNextMonthFormatted } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { AutoBudgetsConfigModal } from '../components/AutoBudgetsConfigModal';
@@ -32,6 +33,8 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
     applyExtremeBudgetCutForCategory,
     restoreBudgetsBeforeExtremeSavings,
   } = useFinance();
+  const { hasPermission } = useUser();
+  const canEditBudgets = hasPermission('canManageBudgets');
 
   const [filter, setFilter] = useState<'all' | 'essential' | 'non_essential' | 'exceeded' | 'warning' | 'ok'>('all');
   const [isAutoConfigOpen, setIsAutoConfigOpen] = useState<boolean>(false);
@@ -113,45 +116,49 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => {
-              const nextState = !extremeSavingsMode;
-              setExtremeSavingsMode(nextState);
-              setActionNotice(
-                nextState 
-                  ? '⚡ Modo de Ahorro Extremo activado: Se resaltan gastos esenciales y se muestran sugerencias de recortes.' 
-                  : 'Modo de Ahorro Extremo desactivado.'
-              );
-              setTimeout(() => setActionNotice(''), 4000);
-            }}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all ${
-              extremeSavingsMode 
-                ? 'bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/30' 
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/30'
-            }`}
-            title="Activar / desactivar Modo de Ahorro Extremo"
-          >
-            <Zap className={`w-4 h-4 ${extremeSavingsMode ? 'fill-current' : 'text-amber-500'}`} />
-            <span>{extremeSavingsMode ? 'Ahorro Extremo ACTIVO' : 'Ahorro Extremo'}</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canEditBudgets && (
+            <>
+              <button
+                onClick={() => {
+                  const nextState = !extremeSavingsMode;
+                  setExtremeSavingsMode(nextState);
+                  setActionNotice(
+                    nextState 
+                      ? '⚡ Modo de Ahorro Extremo activado: Se resaltan gastos esenciales y se muestran sugerencias de recortes.' 
+                      : 'Modo de Ahorro Extremo desactivado.'
+                  );
+                  setTimeout(() => setActionNotice(''), 4000);
+                }}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all ${
+                  extremeSavingsMode 
+                    ? 'bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/30' 
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+                }`}
+                title="Activar / desactivar Modo de Ahorro Extremo"
+              >
+                <Zap className={`w-4 h-4 ${extremeSavingsMode ? 'fill-current' : 'text-amber-500'}`} />
+                <span>{extremeSavingsMode ? 'Ahorro Extremo ACTIVO' : 'Ahorro Extremo'}</span>
+              </button>
 
-          <button
-            onClick={() => setIsAutoConfigOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 shadow-sm transition-all"
-            title="Configurar reinicio automático mensual"
-          >
-            <RotateCcw className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Límites Automáticos</span>
-          </button>
+              <button
+                onClick={() => setIsAutoConfigOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 shadow-sm transition-all"
+                title="Configurar reinicio automático mensual"
+              >
+                <RotateCcw className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Límites Automáticos</span>
+              </button>
 
-          <button
-            onClick={() => onOpenBudgetModal()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Fijar Presupuesto</span>
-          </button>
+              <button
+                onClick={() => onOpenBudgetModal()}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Fijar Presupuesto</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -194,37 +201,39 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-              {extremeSavingsAnalysis.hasBudgetBackup && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    restoreBudgetsBeforeExtremeSavings();
-                    setActionNotice('Presupuestos previos restaurados correctamente.');
-                    setTimeout(() => setActionNotice(''), 4000);
-                  }}
-                  className="px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Restaurar Previos</span>
-                </button>
-              )}
+            {canEditBudgets && (
+              <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+                {extremeSavingsAnalysis.hasBudgetBackup && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      restoreBudgetsBeforeExtremeSavings();
+                      setActionNotice('Presupuestos previos restaurados correctamente.');
+                      setTimeout(() => setActionNotice(''), 4000);
+                    }}
+                    className="px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Restaurar Previos</span>
+                  </button>
+                )}
 
-              {(extremeSavingsAnalysis?.suggestions?.length || 0) > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    applyAllExtremeBudgetSuggestions();
-                    setActionNotice('⚡ Todos los límites de ahorro extremo han sido fijados a tus presupuestos.');
-                    setTimeout(() => setActionNotice(''), 4000);
-                  }}
-                  className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/30 transition-all flex items-center gap-1.5 hover:scale-102"
-                >
-                  <Scissors className="w-3.5 h-3.5" />
-                  <span>Aplicar Todos los Recortes ({extremeSavingsAnalysis?.suggestions?.length || 0})</span>
-                </button>
-              )}
-            </div>
+                {(extremeSavingsAnalysis?.suggestions?.length || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      applyAllExtremeBudgetSuggestions();
+                      setActionNotice('⚡ Todos los límites de ahorro extremo han sido fijados a tus presupuestos.');
+                      setTimeout(() => setActionNotice(''), 4000);
+                    }}
+                    className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-white shadow-sm shadow-amber-500/30 transition-all flex items-center gap-1.5 hover:scale-102"
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span>Aplicar Todos los Recortes ({extremeSavingsAnalysis?.suggestions?.length || 0})</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Carrusel / Grid de sugerencias inmediatas */}
@@ -265,32 +274,34 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                       </span>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        applyExtremeBudgetCutForCategory(sugg.categoryId, sugg.suggestedLimit);
-                        setActionNotice(`Presupuesto de ${sugg.categoryName} recortado a ${formatMoney(sugg.suggestedLimit, currency)}.`);
-                        setTimeout(() => setActionNotice(''), 3500);
-                      }}
-                      disabled={isApplied}
-                      className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                        isApplied 
-                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-default'
-                          : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
-                      }`}
-                    >
-                      {isApplied ? (
-                        <>
-                          <Check className="w-3 h-3 stroke-[3]" />
-                          <span>Límite Aplicado</span>
-                        </>
-                      ) : (
-                        <>
-                          <Scissors className="w-3 h-3" />
-                          <span>Aplicar recorte (+{formatMoney(sugg.cutAmount, currency)})</span>
-                        </>
-                      )}
-                    </button>
+                    {canEditBudgets && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          applyExtremeBudgetCutForCategory(sugg.categoryId, sugg.suggestedLimit);
+                          setActionNotice(`Presupuesto de ${sugg.categoryName} recortado a ${formatMoney(sugg.suggestedLimit, currency)}.`);
+                          setTimeout(() => setActionNotice(''), 3500);
+                        }}
+                        disabled={isApplied}
+                        className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                          isApplied 
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-default'
+                            : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                        }`}
+                      >
+                        {isApplied ? (
+                          <>
+                            <Check className="w-3 h-3 stroke-[3]" />
+                            <span>Límite Aplicado</span>
+                          </>
+                        ) : (
+                          <>
+                            <Scissors className="w-3 h-3" />
+                            <span>Aplicar recorte (+{formatMoney(sugg.cutAmount, currency)})</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -547,26 +558,30 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                           </span>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => toggleBudgetAutoRenew(category.id)}
-                          title={isAutoRenew ? "Desactivar reinicio automático" : "Activar reinicio automático mensual"}
-                          className="text-[10px] text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 underline transition-colors"
-                        >
-                          {isAutoRenew ? 'Desactivar auto' : 'Hacer recurrente'}
-                        </button>
+                        {canEditBudgets && (
+                          <button
+                            type="button"
+                            onClick={() => toggleBudgetAutoRenew(category.id)}
+                            title={isAutoRenew ? "Desactivar reinicio automático" : "Activar reinicio automático mensual"}
+                            className="text-[10px] text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 underline transition-colors"
+                          >
+                            {isAutoRenew ? 'Desactivar auto' : 'Hacer recurrente'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
                 </div>
 
-                <button
-                  onClick={() => onOpenBudgetModal(category.id)}
-                  className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-                  title="Ajustar límite"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
+                {canEditBudgets && (
+                  <button
+                    onClick={() => onOpenBudgetModal(category.id)}
+                    className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+                    title="Ajustar límite"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
               {/* Callout de Recorte en Modo de Ahorro Extremo para no esenciales */}
@@ -582,32 +597,34 @@ export const BudgetsView: React.FC<BudgetsViewProps> = ({ onOpenBudgetModal }) =
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      applyExtremeBudgetCutForCategory(category.id, suggestion.suggestedLimit);
-                      setActionNotice(`Presupuesto de ${category.name} ajustado a ${formatMoney(suggestion.suggestedLimit, currency)}.`);
-                      setTimeout(() => setActionNotice(''), 3500);
-                    }}
-                    disabled={isCutAlreadyApplied}
-                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all shrink-0 flex items-center gap-1 ${
-                      isCutAlreadyApplied
-                        ? 'bg-emerald-600 text-white cursor-default'
-                        : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
-                    }`}
-                  >
-                    {isCutAlreadyApplied ? (
-                      <>
-                        <Check className="w-3 h-3 stroke-[3]" />
-                        <span>Fijado</span>
-                      </>
-                    ) : (
-                      <>
-                        <Scissors className="w-3 h-3" />
-                        <span>Aplicar</span>
-                      </>
-                    )}
-                  </button>
+                  {canEditBudgets && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyExtremeBudgetCutForCategory(category.id, suggestion.suggestedLimit);
+                        setActionNotice(`Presupuesto de ${category.name} ajustado a ${formatMoney(suggestion.suggestedLimit, currency)}.`);
+                        setTimeout(() => setActionNotice(''), 3500);
+                      }}
+                      disabled={isCutAlreadyApplied}
+                      className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all shrink-0 flex items-center gap-1 ${
+                        isCutAlreadyApplied
+                          ? 'bg-emerald-600 text-white cursor-default'
+                          : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                      }`}
+                    >
+                      {isCutAlreadyApplied ? (
+                        <>
+                          <Check className="w-3 h-3 stroke-[3]" />
+                          <span>Fijado</span>
+                        </>
+                      ) : (
+                        <>
+                          <Scissors className="w-3 h-3" />
+                          <span>Aplicar</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
 

@@ -11,6 +11,14 @@
     --color-bg-light: #f8fafc;
     --color-text-primary-light: #0f172a;
     --color-text-secondary-light: #475569;
+    
+    /* Tokens del sistema de diseño financiero oficial (Regla p. 8-9) */
+    --color-primary-corporate: #1A73E8;
+    --color-financial-success: #388E3C;
+    --color-financial-danger: #D32F2F;
+    --color-financial-neutral-900: #212121;
+    --color-financial-neutral-100: #F5F5F5;
+    --radius-component: 8px;
   }
 
   html.dark {
@@ -104,11 +112,19 @@
 }
 
 /* Tipografía monoespaciada de alta precisión para cifras, monedas y porcentajes */
-.font-mono-num {
+.font-mono-num,
+.tabular-nums,
+[data-tabular-nums] {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-feature-settings: "tnum" 1, "zero" 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.015em;
+}
+
+/* Área táctil mínima accesible conforme a WCAG 2.1 AA (mínimo 44x44px) */
+.touch-target-min {
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .animate-shake {

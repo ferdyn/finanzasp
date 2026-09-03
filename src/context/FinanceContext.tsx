@@ -48,7 +48,7 @@ interface FinanceContextType {
   setTheme: (theme: ThemeMode) => void;
 
   // Acciones de Transacciones
-  addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
+  addTransaction: (transaction: Omit<Transaction, 'id'>) => Transaction;
   updateTransaction: (id: string, transaction: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
 
@@ -510,6 +510,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         note: data.note,
       },
     });
+
+    return newTx;
   };
 
   const updateTransaction = (id: string, updated: Partial<Transaction>) => {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { formatMoney, formatDate } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { 
@@ -48,6 +49,9 @@ export const RecurringRemindersWidget: React.FC<RecurringRemindersWidgetProps> =
     getAccountById,
     getCategoryById 
   } = useFinance();
+  const { hasPermission } = useUser();
+  const canCreateTransactions = hasPermission('canCreateTransactions');
+  const canManageRecurring = hasPermission('canManageRecurring');
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'urgent' | 'week' | 'month'>('all');
   const [successToast, setSuccessToast] = useState<{ id: string; message: string } | null>(null);
@@ -382,65 +386,69 @@ export const RecurringRemindersWidget: React.FC<RecurringRemindersWidgetProps> =
 
                     <div className="flex items-center gap-1.5">
                       {/* Botón Pagar / Registrar Ahora */}
-                      <button
-                        type="button"
-                        onClick={() => handleProcessBill(bill)}
-                        disabled={isProcessing}
-                        title={isExpense ? 'Registrar gasto y avanzar fecha al siguiente ciclo' : 'Registrar ingreso y avanzar fecha'}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                          statusInfo.isOverdue || statusInfo.isToday
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-                            : 'bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 text-white'
-                        }`}
-                      >
-                        {isProcessing ? (
-                          <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                        )}
-                        <span>{isExpense ? 'Registrar Pago' : 'Registrar Cobro'}</span>
-                      </button>
-
-                      {/* Menú de Posponer */}
-                      <div className="relative">
+                      {canCreateTransactions && (
                         <button
                           type="button"
-                          onClick={() => setPostponeMenuOpenId(isMenuOpen ? null : bill.id)}
-                          title="Posponer vencimiento"
-                          className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs transition-colors border border-slate-200/80 dark:border-slate-700"
+                          onClick={() => handleProcessBill(bill)}
+                          disabled={isProcessing}
+                          title={isExpense ? 'Registrar gasto y avanzar fecha al siguiente ciclo' : 'Registrar ingreso y avanzar fecha'}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                            statusInfo.isOverdue || statusInfo.isToday
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                              : 'bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 text-white'
+                          }`}
                         >
-                          <Clock className="w-3.5 h-3.5" />
+                          {isProcessing ? (
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                          )}
+                          <span>{isExpense ? 'Registrar Pago' : 'Registrar Cobro'}</span>
                         </button>
+                      )}
 
-                        {isMenuOpen && (
-                          <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 duration-150">
-                            <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              Posponer fecha
+                      {/* Menú de Posponer */}
+                      {canManageRecurring && (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setPostponeMenuOpenId(isMenuOpen ? null : bill.id)}
+                            title="Posponer vencimiento"
+                            className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs transition-colors border border-slate-200/80 dark:border-slate-700"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                          </button>
+
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 duration-150">
+                              <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                Posponer fecha
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handlePostpone(bill.id, 3)}
+                                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-between"
+                              >
+                                <span>+3 días</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePostpone(bill.id, 7)}
+                                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-between"
+                              >
+                                <span>+1 semana</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handlePostpone(bill.id, 15)}
+                                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-between"
+                              >
+                                <span>+15 días</span>
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handlePostpone(bill.id, 3)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-between"
-                            >
-                              <span>+3 días</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePostpone(bill.id, 7)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-between"
-                            >
-                              <span>+1 semana</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePostpone(bill.id, 15)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-between"
-                            >
-                              <span>+15 días</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -457,7 +465,7 @@ export const RecurringRemindersWidget: React.FC<RecurringRemindersWidgetProps> =
           <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
           <span>Al pulsar <strong>Registrar</strong> se crea el movimiento contable y avanza el ciclo.</span>
         </div>
-        {onOpenSettings && (
+        {onOpenSettings && canManageRecurring && (
           <button
             onClick={onOpenSettings}
             className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline"

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { formatMoney } from '../utils/format';
 import { 
   Receipt, Users, Percent, DollarSign, Copy, Check, RotateCcw, 
@@ -26,6 +27,8 @@ export const TipAndSplitCalculator: React.FC<TipAndSplitCalculatorProps> = ({
   onOpenTransactionWithData,
 }) => {
   const { currency, accounts, categories, addTransaction } = useFinance();
+  const { hasPermission } = useUser();
+  const canCreateTransactions = hasPermission('canCreateTransactions');
 
   // Estados principales de la cuenta
   const [billAmountStr, setBillAmountStr] = useState<string>('60.00');
@@ -790,86 +793,88 @@ export const TipAndSplitCalculator: React.FC<TipAndSplitCalculatorProps> = ({
           </div>
 
           {/* Módulo de Integración: Registrar directamente en FinanTrack */}
-          <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">
-                  Registrar mi parte en FinanTrack
+          {canCreateTransactions && (
+            <div className="bg-gradient-to-br from-white via-slate-50/60 to-slate-100/50 dark:from-slate-900 dark:via-slate-800/80 dark:to-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider">
+                    Registrar mi parte en FinanTrack
+                  </span>
+                </div>
+                <span className="text-xs font-bold font-mono-num text-emerald-600 dark:text-emerald-400">
+                  {formatMoney(myPortion, currency)}
                 </span>
               </div>
-              <span className="text-xs font-bold font-mono-num text-emerald-600 dark:text-emerald-400">
-                {formatMoney(myPortion, currency)}
-              </span>
-            </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1">
-                  Cuenta de pago
-                </label>
-                <select
-                  value={selectedAccountId}
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                >
-                  {accounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.name} ({formatMoney(acc.balance, currency)})
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                    Cuenta de pago
+                  </label>
+                  <select
+                    value={selectedAccountId}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    {accounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name} ({formatMoney(acc.balance, currency)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1">
+                    Categoría
+                  </label>
+                  <select
+                    value={selectedCategoryId}
+                    onChange={(e) => setSelectedCategoryId(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    {categories.filter(c => c.type === 'expense').map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-1">
-                  Categoría
-                </label>
-                <select
-                  value={selectedCategoryId}
-                  onChange={(e) => setSelectedCategoryId(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                >
-                  {categories.filter(c => c.type === 'expense').map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleSaveToFinanTrack}
-                disabled={myPortion <= 0}
-                className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 disabled:opacity-40 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all"
-              >
-                <Check className="w-4 h-4" />
-                <span>Guardar como Gasto</span>
-              </button>
-
-              {onOpenTransactionWithData && (
+              <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={handleOpenFullModal}
+                  onClick={handleSaveToFinanTrack}
                   disabled={myPortion <= 0}
-                  className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-98 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center transition-all"
-                  title="Abrir formulario completo para agregar más notas o recibos"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 disabled:opacity-40 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all"
                 >
-                  <ArrowRight className="w-4 h-4" />
+                  <Check className="w-4 h-4" />
+                  <span>Guardar como Gasto</span>
                 </button>
+
+                {onOpenTransactionWithData && (
+                  <button
+                    type="button"
+                    onClick={handleOpenFullModal}
+                    disabled={myPortion <= 0}
+                    className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-98 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center transition-all"
+                    title="Abrir formulario completo para agregar más notas o recibos"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {isSavedToast && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2 animate-fadeIn">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>¡Gasto de {formatMoney(myPortion, currency)} guardado exitosamente en tus transacciones!</span>
+                </div>
               )}
             </div>
-
-            {isSavedToast && (
-              <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center gap-2 animate-fadeIn">
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                <span>¡Gasto de {formatMoney(myPortion, currency)} guardado exitosamente en tus transacciones!</span>
-              </div>
-            )}
-          </div>
+          )}
 
         </div>
 

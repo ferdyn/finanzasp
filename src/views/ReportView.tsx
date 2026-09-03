@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { 
   formatMoney, 
   formatDate, 
@@ -74,6 +75,8 @@ export const ReportView: React.FC<ReportViewProps> = ({ onBack }) => {
     getCategoryById,
     getAccountById
   } = useFinance();
+  const { hasPermission } = useUser();
+  const canExportReports = hasPermission('canExportReports');
 
   // Opciones de configuración de reporte
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('current');
@@ -576,16 +579,18 @@ Generado con FinanTrack Pro`;
               <span>Imprimir / PDF</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleSaveReport}
-              id="btn-save-report"
-              title="Guardar informe en el historial y generar archivo de descarga"
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
-            >
-              <Download className="w-4 h-4" />
-              <span>Guardar Informe</span>
-            </button>
+            {canExportReports && (
+              <button
+                type="button"
+                onClick={handleSaveReport}
+                id="btn-save-report"
+                title="Guardar informe en el historial y generar archivo de descarga"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-emerald-700 dark:hover:bg-emerald-600 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-sm transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>Guardar Informe</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -603,16 +608,18 @@ Generado con FinanTrack Pro`;
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={handleDownloadCSV}
-              id="btn-export-csv"
-              title="Exportar listado de transacciones en formato CSV para Excel"
-              className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs border border-slate-200 dark:border-slate-700 active:scale-95 transition-all flex items-center gap-1.5"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span className="hidden sm:inline">CSV</span>
-            </button>
+            {canExportReports && (
+              <button
+                type="button"
+                onClick={handleDownloadCSV}
+                id="btn-export-csv"
+                title="Exportar listado de transacciones en formato CSV para Excel"
+                className="px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs border border-slate-200 dark:border-slate-700 active:scale-95 transition-all flex items-center gap-1.5"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="hidden sm:inline">CSV</span>
+              </button>
+            )}
           </div>
         </div>
 

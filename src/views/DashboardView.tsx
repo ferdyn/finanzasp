@@ -1,5 +1,6 @@
 import React from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { formatMoney, formatDate, formatMonthPeriod } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { RecurringRemindersWidget } from '../components/RecurringRemindersWidget';
@@ -38,6 +39,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     extremeSavingsMode,
     extremeSavingsAnalysis
   } = useFinance();
+  const { hasPermission } = useUser();
+  const canCreateTransactions = hasPermission('canCreateTransactions');
+  const canEditTransactions = hasPermission('canEditTransactions');
+  const canEditBudgets = hasPermission('canManageBudgets');
 
   // Alertas de recordatorios urgentes/vencidos
   const urgentBills = recurringBills
@@ -167,7 +172,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 self-start md:self-auto">
-            {urgentBills.length === 1 && (
+            {urgentBills.length === 1 && canCreateTransactions && (
               <button
                 type="button"
                 onClick={() => processRecurringBill(urgentBills[0].id)}
@@ -502,12 +507,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {budgetsWithProgress.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-center">
                 <p className="text-xs text-slate-400 mb-2">No has fijado presupuestos para este mes</p>
-                <button
-                  onClick={() => setActiveTab('presupuestos')}
-                  className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
-                >
-                  Fijar presupuesto
-                </button>
+                {canEditBudgets && (
+                  <button
+                    onClick={() => setActiveTab('presupuestos')}
+                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 rounded-lg transition-colors"
+                  >
+                    Fijar presupuesto
+                  </button>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -559,13 +566,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Actividad reciente en tus cuentas</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onOpenNewTransaction}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold rounded-xl transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Añadir</span>
-            </button>
+            {canCreateTransactions && (
+              <button
+                onClick={onOpenNewTransaction}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold rounded-xl transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Añadir</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('movimientos')}
               className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1"
@@ -580,12 +589,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="text-center py-12 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
             <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">No hay movimientos registrados en este mes</p>
             <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 mb-4">Comienza registrando tu primer ingreso o gasto</p>
-            <button
-              onClick={onOpenNewTransaction}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-colors"
-            >
-              + Registrar Movimiento
-            </button>
+            {canCreateTransactions && (
+              <button
+                onClick={onOpenNewTransaction}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-colors"
+              >
+                + Registrar Movimiento
+              </button>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -600,14 +611,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   key={tx.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => onEditTransaction(tx.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
+                  onClick={() => {
+                    if (canEditTransactions) {
                       onEditTransaction(tx.id);
                     }
                   }}
-                  aria-label={`Ver o editar movimiento ${tx.note || cat?.name || 'Movimiento'}, ${formatMoney(tx.amount, currency)}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      if (canEditTransactions) {
+                        onEditTransaction(tx.id);
+                      }
+                    }
+                  }}
+                  aria-label={`${canEditTransactions ? 'Ver o editar' : 'Ver'} movimiento ${tx.note || cat?.name || 'Movimiento'}, ${formatMoney(tx.amount, currency)}`}
                   className="flex items-center justify-between py-3.5 px-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 active:bg-slate-100 dark:active:bg-slate-800 cursor-pointer transition-colors group min-h-[52px]"
                 >
                   <div className="flex items-center gap-3">
@@ -636,10 +653,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
                   </div>
 
-                  <div className={`text-sm sm:text-base font-bold font-mono-num text-right ${
-                    isExpense ? 'text-slate-900 dark:text-white' : isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
+                  <div className={`text-sm sm:text-base font-bold font-mono-num tabular-nums text-right ${
+                    isExpense ? 'text-rose-600 dark:text-rose-400' : isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400'
                   }`}>
-                    {isExpense ? '-' : isIncome ? '+' : ''}{formatMoney(tx.amount, currency)}
+                    {isExpense ? '-' : isIncome ? '+' : '↔'}{formatMoney(tx.amount, currency)}
                   </div>
                 </div>
               );

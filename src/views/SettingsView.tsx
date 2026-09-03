@@ -72,7 +72,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     currentUser,
     auditLogs,
     setIsUserManagementOpen,
+    hasPermission,
   } = useUser();
+
+  const canManageUsers = hasPermission('canManageUsers');
+  const canManageRecurring = hasPermission('canManageRecurring');
+  const canManageCategories = hasPermission('canManageCategories');
+  const canCreateTransactions = hasPermission('canCreateTransactions');
+  const canExportReports = hasPermission('canExportReports');
+  const canEditBudgets = hasPermission('canManageBudgets');
+  const canResetData = hasPermission('canExportImportData');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importStatus, setImportStatus] = useState<string>('');
@@ -263,15 +272,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
-              <button
-                type="button"
-                id="settings-open-user-management-btn"
-                onClick={() => setIsUserManagementOpen(true)}
-                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Gestionar Roles & Permisos</span>
-              </button>
+              {canManageUsers && (
+                <button
+                  type="button"
+                  id="settings-open-user-management-btn"
+                  onClick={() => setIsUserManagementOpen(true)}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-all flex items-center gap-1.5"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Gestionar Roles & Permisos</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -548,7 +559,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {extremeSavingsAnalysis.hasBudgetBackup && (
+                    {canEditBudgets && extremeSavingsAnalysis.hasBudgetBackup && (
                       <button
                         type="button"
                         onClick={() => {
@@ -563,7 +574,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </button>
                     )}
 
-                    {extremeSavingsAnalysis.suggestions.length > 0 && (
+                    {canEditBudgets && extremeSavingsAnalysis.suggestions.length > 0 && (
                       <button
                         type="button"
                         onClick={() => {
@@ -623,32 +634,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </div>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                applyExtremeBudgetCutForCategory(sugg.categoryId, sugg.suggestedLimit);
-                                setSavingsActionStatus(`Límite de ${sugg.categoryName} ajustado a ${formatMoney(sugg.suggestedLimit, currency)}.`);
-                                setTimeout(() => setSavingsActionStatus(''), 3500);
-                              }}
-                              disabled={isAlreadyApplied}
-                              className={`px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 ${
-                                isAlreadyApplied
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 cursor-default'
-                                  : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs hover:scale-105'
-                              }`}
-                            >
-                              {isAlreadyApplied ? (
-                                <>
-                                  <Check className="w-3 h-3 stroke-[3]" />
-                                  <span>Aplicado</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Scissors className="w-3 h-3" />
-                                  <span>Recortar</span>
-                                </>
-                              )}
-                            </button>
+                            {canEditBudgets && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  applyExtremeBudgetCutForCategory(sugg.categoryId, sugg.suggestedLimit);
+                                  setSavingsActionStatus(`Límite de ${sugg.categoryName} ajustado a ${formatMoney(sugg.suggestedLimit, currency)}.`);
+                                  setTimeout(() => setSavingsActionStatus(''), 3500);
+                                }}
+                                disabled={isAlreadyApplied}
+                                className={`px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1 shrink-0 ${
+                                  isAlreadyApplied
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 cursor-default'
+                                    : 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs hover:scale-105'
+                                }`}
+                              >
+                                {isAlreadyApplied ? (
+                                  <>
+                                    <Check className="w-3 h-3 stroke-[3]" />
+                                    <span>Aplicado</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Scissors className="w-3 h-3" />
+                                    <span>Recortar</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
                           </div>
 
                           {/* Comparativa de importes */}
@@ -718,12 +731,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <button
                           key={cat.id}
                           type="button"
-                          onClick={() => toggleCategoryEssential(cat.id)}
+                          onClick={() => {
+                            if (canManageCategories) {
+                              toggleCategoryEssential(cat.id);
+                            }
+                          }}
+                          disabled={!canManageCategories}
                           className={`p-2.5 rounded-xl border text-left flex items-center justify-between gap-2 transition-all ${
                             essential
                               ? 'bg-emerald-50/60 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 hover:border-emerald-400'
                               : 'bg-amber-50/60 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 hover:border-amber-400'
-                          }`}
+                          } ${!canManageCategories ? 'opacity-80 cursor-default' : ''}`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <div
@@ -1260,17 +1278,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={() => setShowAddRecurring(!showAddRecurring)}
-              className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 self-start sm:self-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{showAddRecurring ? 'Cerrar' : 'Añadir Recurrente'}</span>
-            </button>
+            {canManageRecurring && (
+              <button
+                onClick={() => setShowAddRecurring(!showAddRecurring)}
+                className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 self-start sm:self-auto"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{showAddRecurring ? 'Cerrar' : 'Añadir Recurrente'}</span>
+              </button>
+            )}
           </div>
 
           {/* Formulario Añadir Recurrente */}
-          {showAddRecurring && (
+          {showAddRecurring && canManageRecurring && (
             <form onSubmit={handleAddRecurringSubmit} className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 animate-in fade-in duration-200">
               <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Nuevo Movimiento Periódico</h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1445,76 +1465,82 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </span>
                       
                       {/* Botón Pagar / Cobrar */}
-                      <button
-                        type="button"
-                        onClick={() => processRecurringBill(bill.id)}
-                        className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800 transition-colors flex items-center gap-1"
-                        title="Registrar ahora como movimiento y avanzar ciclo"
-                      >
-                        <Play className="w-3 h-3 fill-current" />
-                        <span>{isExpense ? 'Pagar' : 'Cobrar'}</span>
-                      </button>
-
-                      {/* Menú Posponer */}
-                      <div className="relative">
+                      {canCreateTransactions && (
                         <button
                           type="button"
-                          onClick={() => setSettingsPostponeId(isMenuOpen ? null : bill.id)}
-                          className="px-2 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-semibold rounded-xl transition-colors border border-slate-200 dark:border-slate-700 flex items-center gap-1"
-                          title="Posponer fecha de vencimiento"
+                          onClick={() => processRecurringBill(bill.id)}
+                          className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold rounded-xl border border-emerald-200 dark:border-emerald-800 transition-colors flex items-center gap-1"
+                          title="Registrar ahora como movimiento y avanzar ciclo"
                         >
-                          <Clock className="w-3 h-3" />
-                          <span className="hidden sm:inline">Posponer</span>
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>{isExpense ? 'Pagar' : 'Cobrar'}</span>
                         </button>
+                      )}
 
-                        {isMenuOpen && (
-                          <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 duration-150">
-                            <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                              Posponer
+                      {/* Menú Posponer */}
+                      {canManageRecurring && (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setSettingsPostponeId(isMenuOpen ? null : bill.id)}
+                            className="px-2 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-semibold rounded-xl transition-colors border border-slate-200 dark:border-slate-700 flex items-center gap-1"
+                            title="Posponer fecha de vencimiento"
+                          >
+                            <Clock className="w-3 h-3" />
+                            <span className="hidden sm:inline">Posponer</span>
+                          </button>
+
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-20 animate-in fade-in zoom-in-95 duration-150">
+                              <div className="px-2.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                Posponer
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  postponeRecurringBill(bill.id, 3);
+                                  setSettingsPostponeId(null);
+                                }}
+                                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              >
+                                +3 días
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  postponeRecurringBill(bill.id, 7);
+                                  setSettingsPostponeId(null);
+                                }}
+                                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              >
+                                +1 semana (7d)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  postponeRecurringBill(bill.id, 15);
+                                  setSettingsPostponeId(null);
+                                }}
+                                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                              >
+                                +15 días
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                postponeRecurringBill(bill.id, 3);
-                                setSettingsPostponeId(null);
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                            >
-                              +3 días
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                postponeRecurringBill(bill.id, 7);
-                                setSettingsPostponeId(null);
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                            >
-                              +1 semana (7d)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                postponeRecurringBill(bill.id, 15);
-                                setSettingsPostponeId(null);
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-                            >
-                              +15 días
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Eliminar */}
-                      <button
-                        type="button"
-                        onClick={() => deleteRecurringBill(bill.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                        title="Eliminar este recordatorio recurrente"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canManageRecurring && (
+                        <button
+                          type="button"
+                          onClick={() => deleteRecurringBill(bill.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                          title="Eliminar este recordatorio recurrente"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -1550,70 +1576,78 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
             )}
 
-            <button
-              onClick={exportDataJSON}
-              className="p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-left transition-colors flex items-center gap-3 group"
-            >
-              <Download className="w-5 h-5 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform" />
-              <div>
-                <span className="block text-xs font-bold text-slate-900 dark:text-white">Exportar Backup JSON</span>
-                <span className="block text-[10px] text-slate-400 dark:text-slate-400">Guarda todas las cuentas, metas y transacciones</span>
-              </div>
-            </button>
+            {canExportReports && (
+              <button
+                onClick={exportDataJSON}
+                className="p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-left transition-colors flex items-center gap-3 group"
+              >
+                <Download className="w-5 h-5 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform" />
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 dark:text-white">Exportar Backup JSON</span>
+                  <span className="block text-[10px] text-slate-400 dark:text-slate-400">Guarda todas las cuentas, metas y transacciones</span>
+                </div>
+              </button>
+            )}
 
-            <button
-              onClick={exportTransactionsCSV}
-              className="p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-left transition-colors flex items-center gap-3 group"
-            >
-              <FileText className="w-5 h-5 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform" />
-              <div>
-                <span className="block text-xs font-bold text-slate-900 dark:text-white">Exportar CSV Excel</span>
-                <span className="block text-[10px] text-slate-400 dark:text-slate-400">Descarga hoja de cálculo con tus movimientos</span>
-              </div>
-            </button>
+            {canExportReports && (
+              <button
+                onClick={exportTransactionsCSV}
+                className="p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-left transition-colors flex items-center gap-3 group"
+              >
+                <FileText className="w-5 h-5 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform" />
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 dark:text-white">Exportar CSV Excel</span>
+                  <span className="block text-[10px] text-slate-400 dark:text-slate-400">Descarga hoja de cálculo con tus movimientos</span>
+                </div>
+              </button>
+            )}
 
-            <label className="p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-left transition-colors flex items-center gap-3 group cursor-pointer">
-              <Upload className="w-5 h-5 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform" />
-              <div>
-                <span className="block text-xs font-bold text-slate-900 dark:text-white">Importar Backup JSON</span>
-                <span className="block text-[10px] text-slate-400 dark:text-slate-400">Restaura un archivo previamente exportado</span>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
+            {canResetData && (
+              <label className="p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-left transition-colors flex items-center gap-3 group cursor-pointer">
+                <Upload className="w-5 h-5 text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform" />
+                <div>
+                  <span className="block text-xs font-bold text-slate-900 dark:text-white">Importar Backup JSON</span>
+                  <span className="block text-[10px] text-slate-400 dark:text-slate-400">Restaura un archivo previamente exportado</span>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
 
           {/* Opciones de Peligro / Reset */}
-          <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <button
-              onClick={() => {
-                if (confirm('¿Restablecer datos a la muestra inicial de ejemplo?')) {
-                  resetToSeedData();
-                }
-              }}
-              className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restablecer Datos de Ejemplo</span>
-            </button>
+          {canResetData && (
+            <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                onClick={() => {
+                  if (confirm('¿Restablecer datos a la muestra inicial de ejemplo?')) {
+                    resetToSeedData();
+                  }
+                }}
+                className="text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restablecer Datos de Ejemplo</span>
+              </button>
 
-            <button
-              onClick={() => {
-                if (confirm('¿ATENCIÓN: Quieres borrar absolutamente todos tus datos registrados?')) {
-                  clearAllData();
-                }
-              }}
-              className="text-xs font-bold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Borrar Todo el Contenido</span>
-            </button>
-          </div>
+              <button
+                onClick={() => {
+                  if (confirm('¿ATENCIÓN: Quieres borrar absolutamente todos tus datos registrados?')) {
+                    clearAllData();
+                  }
+                }}
+                className="text-xs font-bold text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 flex items-center gap-1.5 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Borrar Todo el Contenido</span>
+              </button>
+            </div>
+          )}
         </div>
 
       </div>

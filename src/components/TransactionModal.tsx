@@ -6,9 +6,11 @@ import { Transaction, TransactionTemplate, TransactionType } from '../types/fina
 import { DynamicIcon } from './DynamicIcon';
 import { 
   X, Check, ArrowRightLeft, TrendingDown, TrendingUp, Calendar, Tag, FileText, 
-  Trash2, Bookmark, BookmarkPlus, Sparkles, CheckCircle2, UserCheck, ShieldAlert 
+  Trash2, Bookmark, BookmarkPlus, Sparkles, CheckCircle2, UserCheck, ShieldAlert,
+  Loader2, ShieldCheck, ArrowRight, Info
 } from 'lucide-react';
 import { CURRENCIES, formatMoney } from '../utils/format';
+import { TransactionReceiptModal } from './TransactionReceiptModal';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -57,6 +59,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [saveTemplateError, setSaveTemplateError] = useState<string>('');
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [savedTxForReceipt, setSavedTxForReceipt] = useState<Transaction | null>(null);
 
   useEffect(() => {
     if (transactionToEdit) {
@@ -95,6 +99,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const filteredCategories = categories.filter(c => c.type === (type === 'transfer' ? 'expense' : type));
   const currSymbol = CURRENCIES[currency]?.symbol || '€';
+
+  const liveParsedAmount = parseFloat(amountStr.replace(',', '.'));
+  const isAmountValid = !isNaN(liveParsedAmount) && liveParsedAmount > 0;
+  const isAmountInvalid = amountStr.trim() !== '' && !isAmountValid;
+  const fromAcc = accounts.find(a => a.id === accountId);
+  const toAcc = accounts.find(a => a.id === toAccountId);
 
   const handleApplyTemplate = (tmpl: TransactionTemplate) => {
     setType(tmpl.type);
@@ -217,13 +227,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       });
     }
 
-    if (transactionToEdit) {
-      updateTransaction(transactionToEdit.id, payload);
-    } else {
-      addTransaction(payload);
+    setIsProcessing(true);
+
+    // Feedback háptico inmediato en dispositivos móviles (Regla p. 6 [47†L368-L371])
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try { navigator.vibrate(15); } catch {}
     }
 
-    onClose();
+    // Retraso controlado (~500ms) para reafirmar el proceso financiero seguro (Regla p. 4 [1†L109-L117])
+    setTimeout(() => {
+      if (transactionToEdit) {
+        updateTransaction(transactionToEdit.id, payload);
+        setIsProcessing(false);
+        onClose();
+      } else {
+        const createdTx = addTransaction(payload);
+        setIsProcessing(false);
+        setSavedTxForReceipt(createdTx);
+      }
+    }, 550);
   };
 
   const handleDelete = () => {
@@ -534,6 +556,20 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 </button>
               )}
             </div>
+
+            {/* Validación inmediata en tiempo real conforme a Principios UX Financieros (Regla p. 3) */}
+            {isAmountInvalid && (
+              <p className="text-xs font-semibold text-rose-600 dark:text-rose-400 mt-1.5 flex items-center gap-1.5 animate-in fade-in slide-in-from-top-1">
+                <Info className="w-3.5 h-3.5 shrink-0" />
+                <span>Introduce un importe válido superior a 0 (ej. 25,50)</span>
+              </p>
+            )}
+            {isAmountValid && (
+              <p className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1 animate-in fade-in">
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>Importe verificado: <strong className="font-mono-num font-bold">{formatMoney(liveParsedAmount, currency)}</strong></span>
+              </p>
+            )}
           </div>
 
           {/* Selector de Categorías (Sólo para Gastos e Ingresos) */}
@@ -732,6 +768,24 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           </div>
 
+          {/* Tarjeta de verificación y transparencia previa para transferencias (Regla UX/UI p. 4) */}
+          {type === 'transfer' && fromAcc && toAcc && isAmountValid && (
+            <div className="p-3.5 bg-blue-50/80 dark:bg-blue-950/40 rounded-2xl border border-blue-200 dark:border-blue-800/80 space-y-2 text-xs text-slate-700 dark:text-slate-300 animate-in fade-in">
+              <div className="flex items-center gap-1.5 font-bold text-blue-700 dark:text-blue-300">
+                <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span>Verificación Transparente de Transferencia</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] font-semibold">
+                <span className="text-slate-500 dark:text-slate-400">Origen: {fromAcc.name}</span>
+                <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">➔ Destino: {toAcc.name}</span>
+              </div>
+              <div className="flex items-center justify-between pt-1.5 border-t border-blue-200/60 dark:border-blue-800/60 text-[11px]">
+                <span>Comisión bancaria: <strong className="font-mono-num text-emerald-600 dark:text-emerald-400 font-bold">0,00 {currency} (0%)</strong></span>
+                <span>Disponibilidad: <strong className="text-emerald-600 dark:text-emerald-400 font-bold">Inmediata</strong></span>
+              </div>
+            </div>
+          )}
+
           {/* Botones de Acción */}
           <div className="flex items-center gap-3 pt-3 border-t border-slate-100 dark:border-slate-800 pb-1">
             {transactionToEdit && hasPermission('canDeleteTransactions') && (
@@ -749,22 +803,44 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors min-h-[48px] active:scale-[0.98]"
+              disabled={isProcessing}
+              className="flex-1 py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors min-h-[48px] active:scale-[0.98] disabled:opacity-50"
             >
               Cancelar
             </button>
 
             <button
               type="submit"
-              disabled={!hasPermission(transactionToEdit ? 'canEditTransactions' : 'canCreateTransactions')}
+              disabled={isProcessing || !hasPermission(transactionToEdit ? 'canEditTransactions' : 'canCreateTransactions')}
               className="flex-1 py-3 px-4 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold text-white shadow-md transition-all flex items-center justify-center gap-2 min-h-[48px] active:scale-[0.98]"
             >
-              <Check className="w-4 h-4" />
-              <span>{transactionToEdit ? 'Guardar Cambios' : 'Registrar'}</span>
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Confirmando...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>{transactionToEdit ? 'Guardar Cambios' : 'Registrar'}</span>
+                </>
+              )}
             </button>
           </div>
 
         </form>
+
+        {/* Modal de Comprobante Pos-Confirmación (Regla UX/UI p. 4) */}
+        {savedTxForReceipt && (
+          <TransactionReceiptModal
+            isOpen={true}
+            transaction={savedTxForReceipt}
+            onClose={() => {
+              setSavedTxForReceipt(null);
+              onClose();
+            }}
+          />
+        )}
       </div>
     </div>
   );

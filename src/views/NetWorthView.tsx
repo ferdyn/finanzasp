@@ -1,5 +1,6 @@
 import React from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { formatMoney } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Account, AccountType } from '../types/finance';
@@ -21,6 +22,8 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
   onOpenCompoundSimulator,
 }) => {
   const { accounts, metrics, currency } = useFinance();
+  const { hasPermission } = useUser();
+  const canEditAccounts = hasPermission('canManageAccounts');
 
   const assetAccounts = accounts.filter(a => a.balance >= 0);
   const liabilityAccounts = accounts.filter(a => a.balance < 0 || a.type === 'credit' || a.type === 'debt');
@@ -59,13 +62,15 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
             <span>Simulador de Interés</span>
           </button>
 
-          <button
-            onClick={() => onOpenAccountModal()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nueva Cuenta</span>
-          </button>
+          {canEditAccounts && (
+            <button
+              onClick={() => onOpenAccountModal()}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nueva Cuenta</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -157,13 +162,15 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                   <span className="text-base font-bold text-slate-900 dark:text-white font-mono-num">
                     {formatMoney(acc.balance, currency)}
                   </span>
-                  <button
-                    onClick={() => onOpenAccountModal(acc)}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
-                    title="Editar cuenta"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
+                  {canEditAccounts && (
+                    <button
+                      onClick={() => onOpenAccountModal(acc)}
+                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
+                      title="Editar cuenta"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -219,13 +226,15 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                     <span className="text-base font-bold text-red-600 dark:text-red-400 font-mono-num">
                       {formatMoney(acc.balance, currency)}
                     </span>
-                    <button
-                      onClick={() => onOpenAccountModal(acc)}
-                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
-                      title="Editar cuenta"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
+                    {canEditAccounts && (
+                      <button
+                        onClick={() => onOpenAccountModal(acc)}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
+                        title="Editar cuenta"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))

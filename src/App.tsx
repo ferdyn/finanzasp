@@ -139,7 +139,7 @@ function MainLayout() {
         <main 
           id="main-content"
           role="main"
-          className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] lg:pb-12 focus:outline-none"
+          className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 pt-3.5 sm:pt-6 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] sm:pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:pb-12 focus:outline-none"
         >
           {activeTab === 'resumen' && (
             <DashboardView
@@ -253,7 +253,7 @@ function MainLayout() {
 
         {/* Indicador flotante y acceso rápido cuando el Modo Espía está activo */}
         {privacyMode && (
-          <div className="fixed bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="fixed bottom-14 sm:bottom-6 left-1/2 -translate-x-1/2 sm:left-auto sm:right-6 sm:translate-x-0 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
             <button
               type="button"
               onClick={togglePrivacyMode}

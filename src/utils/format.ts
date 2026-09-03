@@ -38,6 +38,20 @@ export function formatMoney(amount: number, currencyCode: CurrencyCode = 'EUR'):
   return isNegative ? `-${withSymbol}` : withSymbol;
 }
 
+/**
+ * Formatea un monto asegurando signo explícito (+ / -) para accesibilidad daltónica
+ * y consistencia visual en balances e informes financieros (Regla UX/UI [36†L902-L909])
+ */
+export function formatMoneySigned(amount: number, currencyCode: CurrencyCode = 'EUR'): string {
+  if (amount > 0) {
+    return `+${formatMoney(amount, currencyCode)}`;
+  }
+  if (amount < 0) {
+    return formatMoney(amount, currencyCode);
+  }
+  return formatMoney(0, currencyCode);
+}
+
 export function formatDate(dateString: string, format: 'short' | 'medium' | 'long' | 'relative' = 'medium'): string {
   if (!dateString) return '';
   const date = new Date(dateString + 'T12:00:00');

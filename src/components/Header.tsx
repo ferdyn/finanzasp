@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTransaction, activeTab,
     getAccountById
   } = useFinance();
   const { isLockEnabled, lockApp } = useSecurity();
-  const { setIsUserManagementOpen } = useUser();
+  const { setIsUserManagementOpen, hasPermission } = useUser();
   const { startTour } = useTour();
 
   const [notifOpen, setNotifOpen] = useState(false);
@@ -315,24 +315,26 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTransaction, activeTab,
                           </div>
 
                           {/* Acciones rápidas */}
-                          <div className="flex items-center justify-end gap-1.5 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => handleQuickPostpone(bill.id, 3)}
-                              className="px-2 py-1 text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors flex items-center gap-1"
-                            >
-                              <Clock className="w-3 h-3" />
-                              <span>+3d</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleQuickPay(bill.id, bill.name)}
-                              className="px-2.5 py-1 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1"
-                            >
-                              <Check className="w-3 h-3 stroke-[2.5]" />
-                              <span>{bill.type === 'expense' ? 'Pagar' : 'Cobrar'}</span>
-                            </button>
-                          </div>
+                          {hasPermission('canCreateTransactions') && (
+                            <div className="flex items-center justify-end gap-1.5 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleQuickPostpone(bill.id, 3)}
+                                className="px-2 py-1 text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors flex items-center gap-1"
+                              >
+                                <Clock className="w-3 h-3" />
+                                <span>+3d</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleQuickPay(bill.id, bill.name)}
+                                className="px-2.5 py-1 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1"
+                              >
+                                <Check className="w-3 h-3 stroke-[2.5]" />
+                                <span>{bill.type === 'expense' ? 'Pagar' : 'Cobrar'}</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))
                     )}
@@ -615,101 +617,109 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTransaction, activeTab,
                       <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     </button>
 
-                    <button
-                      type="button"
-                      id="popover-nav-history"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setActiveTab('historial');
-                      }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left ${
-                        activeTab === 'historial'
-                          ? 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-indigo-900 dark:text-indigo-200'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                          <History className="w-3.5 h-3.5" />
+                    {hasPermission('canViewAuditLog') && (
+                      <button
+                        type="button"
+                        id="popover-nav-history"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setActiveTab('historial');
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left ${
+                          activeTab === 'historial'
+                            ? 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-indigo-900 dark:text-indigo-200'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                            <History className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Historial & Auditoría</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Registro de eventos y trazabilidad</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Historial & Auditoría</p>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Registro de eventos y trazabilidad</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    </button>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      id="popover-nav-users"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setIsUserManagementOpen(true);
-                      }}
-                      className="w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-950/70 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
-                          <Users className="w-3.5 h-3.5" />
+                    {(hasPermission('canManageUsers') || hasPermission('canEditRolePermissions')) && (
+                      <button
+                        type="button"
+                        id="popover-nav-users"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setIsUserManagementOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-950/70 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                            <Users className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Usuarios & Roles (RBAC)</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Control de permisos y accesos</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Usuarios & Roles (RBAC)</p>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Control de permisos y accesos</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    </button>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      id="popover-nav-reports"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setActiveTab('reportes');
-                      }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left ${
-                        activeTab === 'reportes'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                          <Printer className="w-3.5 h-3.5" />
+                    {hasPermission('canExportReports') && (
+                      <button
+                        type="button"
+                        id="popover-nav-reports"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setActiveTab('reportes');
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left ${
+                          activeTab === 'reportes'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                            <Printer className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Reportes & Balances PDF</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Impresión y exportación de balances</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Reportes & Balances PDF</p>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Impresión y exportación de balances</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    </button>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      id="popover-nav-advisor"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setActiveTab('asesor');
-                      }}
-                      className={`w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left ${
-                        activeTab === 'asesor'
-                          ? 'bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-200'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/70 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-                          <Sparkles className="w-3.5 h-3.5" />
+                    {hasPermission('canUseAiAdvisor') && (
+                      <button
+                        type="button"
+                        id="popover-nav-advisor"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setActiveTab('asesor');
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-xl transition-colors text-left ${
+                          activeTab === 'asesor'
+                            ? 'bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-200'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/70 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                            <Sparkles className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Asesor Financiero IA</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Diagnóstico y recomendaciones</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">Asesor Financiero IA</p>
-                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">Diagnóstico y recomendaciones</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    </button>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      </button>
+                    )}
                   </div>
 
                   {/* 5. PIE DEL MENÚ: AJUSTES COMPLETOS */}
@@ -751,27 +761,31 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewTransaction, activeTab,
             <UserSwitcher />
 
             {/* Asesor IA Botón (Visible en tablet y desktop para acceso directo) */}
-            <button
-              onClick={() => setActiveTab('asesor')}
-              aria-label="Consultar Asesor Financiero con Inteligencia Artificial"
-              className={`hidden md:flex h-8 sm:h-9 md:h-10 px-2.5 sm:px-3 text-xs sm:text-sm font-medium rounded-xl border transition-all active:scale-95 shrink-0 items-center justify-center gap-1.5 ${
-                activeTab === 'asesor'
-                  ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20'
-                  : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/60 hover:bg-purple-100 dark:hover:bg-purple-900/50'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-500 shrink-0" />
-              <span>Asesor IA</span>
-            </button>
+            {hasPermission('canUseAiAdvisor') && (
+              <button
+                onClick={() => setActiveTab('asesor')}
+                aria-label="Consultar Asesor Financiero con Inteligencia Artificial"
+                className={`hidden md:flex h-8 sm:h-9 md:h-10 px-2.5 sm:px-3 text-xs sm:text-sm font-medium rounded-xl border transition-all active:scale-95 shrink-0 items-center justify-center gap-1.5 ${
+                  activeTab === 'asesor'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/20'
+                    : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/60 hover:bg-purple-100 dark:hover:bg-purple-900/50'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-500 shrink-0" />
+                <span>Asesor IA</span>
+              </button>
+            )}
 
             {/* Botón Nuevo Movimiento (Visible en desktop; en móvil está centrado en la barra inferior) */}
-            <button
-              onClick={onOpenNewTransaction}
-              className="hidden lg:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 hover:shadow-emerald-600/30 transition-all hover:scale-[1.02] shrink-0"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Nuevo</span>
-            </button>
+            {hasPermission('canCreateTransactions') && (
+              <button
+                onClick={onOpenNewTransaction}
+                className="hidden lg:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 hover:shadow-emerald-600/30 transition-all hover:scale-[1.02] shrink-0"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>Nuevo</span>
+              </button>
+            )}
           </div>
 
         </div>

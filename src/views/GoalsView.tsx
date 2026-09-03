@@ -1,5 +1,6 @@
 import React from 'react';
 import { useFinance } from '../context/FinanceContext';
+import { useUser } from '../context/UserContext';
 import { formatMoney, formatDate } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { SavingsGoal } from '../types/finance';
@@ -11,6 +12,9 @@ interface GoalsViewProps {
 
 export const GoalsView: React.FC<GoalsViewProps> = ({ onOpenGoalModal }) => {
   const { goals, currency } = useFinance();
+  const { hasPermission } = useUser();
+  const canManageGoals = hasPermission('canManageGoals');
+  const canContributeGoals = hasPermission('canContributeGoals') || canManageGoals;
 
   const totalTarget = goals.reduce((sum, g) => sum + g.targetAmount, 0);
   const totalSaved = goals.reduce((sum, g) => sum + g.currentAmount, 0);
@@ -31,13 +35,15 @@ export const GoalsView: React.FC<GoalsViewProps> = ({ onOpenGoalModal }) => {
           </p>
         </div>
 
-        <button
-          onClick={() => onOpenGoalModal(undefined, 'create')}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Nueva Meta</span>
-        </button>
+        {canManageGoals && (
+          <button
+            onClick={() => onOpenGoalModal(undefined, 'create')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Nueva Meta</span>
+          </button>
+        )}
       </div>
 
       {/* Banner Resumen de Metas con degradado adaptativo */}
@@ -106,12 +112,14 @@ export const GoalsView: React.FC<GoalsViewProps> = ({ onOpenGoalModal }) => {
           </div>
           <h3 className="text-base font-bold text-slate-800 dark:text-white">No tienes metas de ahorro activas</h3>
           <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 mb-4">Crea una meta para vacaciones, fondo de emergencia, coche o estudios.</p>
-          <button
-            onClick={() => onOpenGoalModal(undefined, 'create')}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-colors"
-          >
-            + Crear Mi Primera Meta
-          </button>
+          {canManageGoals && (
+            <button
+              onClick={() => onOpenGoalModal(undefined, 'create')}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-colors"
+            >
+              + Crear Mi Primera Meta
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -144,13 +152,15 @@ export const GoalsView: React.FC<GoalsViewProps> = ({ onOpenGoalModal }) => {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => onOpenGoalModal(goal, 'edit')}
-                      className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                      title="Editar meta"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </button>
+                    {canManageGoals && (
+                      <button
+                        onClick={() => onOpenGoalModal(goal, 'edit')}
+                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                        title="Editar meta"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
 
                   {goal.notes && (
@@ -207,14 +217,16 @@ export const GoalsView: React.FC<GoalsViewProps> = ({ onOpenGoalModal }) => {
                     )}
                   </div>
 
-                  <button
-                    onClick={() => onOpenGoalModal(goal, 'contribute')}
-                    disabled={isCompleted}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 disabled:opacity-50 text-emerald-800 dark:text-emerald-300 text-xs font-bold rounded-xl border border-emerald-200 dark:border-emerald-800 transition-colors"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Aportar</span>
-                  </button>
+                  {canContributeGoals && (
+                    <button
+                      onClick={() => onOpenGoalModal(goal, 'contribute')}
+                      disabled={isCompleted}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 disabled:opacity-50 text-emerald-800 dark:text-emerald-300 text-xs font-bold rounded-xl border border-emerald-200 dark:border-emerald-800 transition-colors"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Aportar</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
