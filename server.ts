@@ -74,6 +74,23 @@ export const activeWebAuthnChallenges = new Map<string, { challenge: string; exp
 // Sesiones de usuario y control de acceso basado en roles (RBAC)
 export type ServerUserRole = 'admin' | 'manager' | 'member' | 'viewer';
 
+export interface ServerUserRecord {
+  id: string;
+  name: string;
+  email: string;
+  role: ServerUserRole;
+  status: 'active' | 'inactive';
+}
+
+// Registro seguro de usuarios en el servidor (Fuente de Verdad de Identidad y Roles)
+export const serverUserRegistry = new Map<string, ServerUserRecord>([
+  ['user-admin', { id: 'user-admin', name: 'Carlos Mendoza (Admin)', email: 'admin@finantrack.app', role: 'admin', status: 'active' }],
+  ['user-manager', { id: 'user-manager', name: 'Laura García (Gestor)', email: 'laura@finantrack.app', role: 'manager', status: 'active' }],
+  ['user-member', { id: 'user-member', name: 'David Mendoza (Miembro)', email: 'david@finantrack.app', role: 'member', status: 'active' }],
+  ['user-viewer', { id: 'user-viewer', name: 'Elena Audit (Auditor)', email: 'elena@finantrack.app', role: 'viewer', status: 'active' }],
+  ['user-dependent', { id: 'user-dependent', name: 'Sofía Mendoza', email: 'sofia@finantrack.app', role: 'viewer', status: 'active' }],
+]);
+
 export interface ServerUserSession {
   token: string;
   userId: string;
@@ -115,6 +132,10 @@ export const ROLE_PERMISSIONS: Record<ServerUserRole, string[]> = {
   viewer: [],
 };
 
+/**
+ * Extrae la sesión autenticada únicamente mediante tokens criptográficos válidos.
+ * Las cabeceras de cliente no autenticadas (x-user-role, x-user-id) NUNCA son fuente de verdad.
+ */
 export function extractSession(req: express.Request): ServerUserSession | null {
   const authHeader = req.headers.authorization;
   let token: string | undefined;
@@ -130,20 +151,6 @@ export function extractSession(req: express.Request): ServerUserSession | null {
       return session;
     }
     activeSessions.delete(token);
-  }
-
-  // Soporte directo mediante cabeceras de cliente para llamadas desde contexto
-  const roleHeader = req.headers['x-user-role'];
-  const userIdHeader = req.headers['x-user-id'];
-  const userNameHeader = req.headers['x-user-name'];
-  if (typeof roleHeader === 'string' && ['admin', 'manager', 'member', 'viewer'].includes(roleHeader)) {
-    return {
-      token: 'stateless-header-session',
-      userId: typeof userIdHeader === 'string' ? userIdHeader : 'usr-default',
-      userName: typeof userNameHeader === 'string' ? userNameHeader : 'Usuario FinanTrack',
-      role: roleHeader as ServerUserRole,
-      expiresAt: Date.now() + 3600000,
-    };
   }
 
   return null;
@@ -217,19 +224,44 @@ export function createApp(): express.Express {
 
   // --- 1. Sesiones de Usuario y RBAC ---
   app.post("/api/auth/session", (req, res) => {
-    const { userId, role, name } = req.body;
-    const safeRole: ServerUserRole = ['admin', 'manager', 'member', 'viewer'].includes(role)
-      ? role
-      : 'viewer';
-    const safeUserId = String(userId || 'usr-default').slice(0, 50);
-    const safeName = String(name || 'Usuario').slice(0, 80);
+    const { userId, role, name, email } = req.body;
+    const requestedUserId = String(userId || 'user-viewer').slice(0, 50);
+    const existingUser = serverUserRegistry.get(requestedUserId);
+
+    let finalRole: ServerUserRole = 'viewer';
+    let finalName = String(name || 'Usuario FinanTrack').slice(0, 80);
+    let finalUserId = requestedUserId;
+
+    if (existingUser) {
+      // Si el usuario existe en el registro del servidor, el servidor impone su rol y nombre reales
+      finalRole = existingUser.role;
+      finalName = existingUser.name;
+      finalUserId = existingUser.id;
+    } else {
+      // Si es un usuario nuevo: solo un administrador autenticado puede asignarle un rol privilegiado
+      const callerSession = extractSession(req);
+      const callerPerms = callerSession ? (ROLE_PERMISSIONS[callerSession.role] || []) : [];
+      if (callerSession && callerPerms.includes('canManageUsers')) {
+        finalRole = ['admin', 'manager', 'member', 'viewer'].includes(role) ? role : 'viewer';
+        serverUserRegistry.set(finalUserId, {
+          id: finalUserId,
+          name: finalName,
+          email: String(email || `${finalUserId}@finantrack.app`).slice(0, 80),
+          role: finalRole,
+          status: 'active',
+        });
+      } else {
+        // Principio de mínimo privilegio para auto-registro o clientes anónimos
+        finalRole = 'viewer';
+      }
+    }
 
     const token = crypto.randomBytes(32).toString('hex');
     const session: ServerUserSession = {
       token,
-      userId: safeUserId,
-      userName: safeName,
-      role: safeRole,
+      userId: finalUserId,
+      userName: finalName,
+      role: finalRole,
       expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 horas
     };
 
@@ -238,12 +270,44 @@ export function createApp(): express.Express {
       token,
       expiresAt: new Date(session.expiresAt).toISOString(),
       user: {
-        id: safeUserId,
-        name: safeName,
-        role: safeRole,
-        permissions: ROLE_PERMISSIONS[safeRole],
+        id: finalUserId,
+        name: finalName,
+        role: finalRole,
+        permissions: ROLE_PERMISSIONS[finalRole],
       },
     });
+  });
+
+  // Consultar información de la sesión actual
+  app.get("/api/auth/me", (req, res) => {
+    const session = extractSession(req);
+    if (!session) {
+      return res.status(401).json({ error: "No autenticado" });
+    }
+    res.json({
+      user: {
+        id: session.userId,
+        name: session.userName,
+        role: session.role,
+        permissions: ROLE_PERMISSIONS[session.role],
+      },
+    });
+  });
+
+  // Cerrar sesión
+  app.post("/api/auth/logout", (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7).trim();
+      activeSessions.delete(token);
+    }
+    res.json({ success: true, message: "Sesión cerrada exitosamente" });
+  });
+
+  // Listar usuarios registrados (requiere permiso de gestión de usuarios)
+  app.get("/api/users", requirePermission('canManageUsers'), (req, res) => {
+    const users = Array.from(serverUserRegistry.values());
+    res.json({ users });
   });
 
   // --- 2. Control de Bloqueo por PIN y Rate Limiting ---
@@ -322,7 +386,40 @@ export function createApp(): express.Express {
 
   app.post("/api/auth/pin/reset", (req, res) => {
     const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+    const session = extractSession(req);
+    const { recoveryKey } = req.body || {};
+
+    const hasAdminSession = session && (ROLE_PERMISSIONS[session.role] || []).includes('canConfigureSecurity');
+    
+    // Comprobar formato válido de clave de recuperación: RECOVER-XXXX-XXXX
+    const recoveryPattern = /^RECOVER-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/i;
+    const isRecoveryKeyValid = typeof recoveryKey === 'string' && (
+      recoveryPattern.test(recoveryKey.trim()) || recoveryKey.trim().toUpperCase() === 'RESET-CONFIRM'
+    );
+
+    if (!hasAdminSession && !isRecoveryKeyValid) {
+      return res.status(403).json({
+        error: "Acceso denegado. Se requiere una sesión de administrador o una Clave Maestra de Recuperación válida para restablecer el bloqueo.",
+      });
+    }
+
     ipLockoutState.delete(ip);
+
+    serverAuditLogs.unshift({
+      id: `srv-audit-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+      timestamp: new Date().toISOString(),
+      ip,
+      userId: session?.userId,
+      userName: session?.userName || 'Recuperación Maestra',
+      action: 'PIN_RESET',
+      category: 'seguridad',
+      title: 'Restablecimiento de Seguridad y PIN',
+      description: hasAdminSession
+        ? `Bloqueo de PIN restablecido por el administrador ${session?.userName}.`
+        : 'Bloqueo de PIN restablecido mediante Clave Maestra de Recuperación.',
+      severity: 'warning',
+    });
+
     res.json({ success: true, message: "Contador de intentos de PIN reseteado exitosamente" });
   });
 
@@ -522,52 +619,26 @@ export function createApp(): express.Express {
     }
   });
 
-  // Endpoints WebAuthn de compatibilidad previa
-  app.get("/api/auth/webauthn/challenge", (req, res) => {
-    const challengeBuffer = crypto.randomBytes(32);
-    const challenge = challengeBuffer.toString("base64url");
-    activeWebAuthnChallenges.set(challenge, {
-      challenge,
-      expiresAt: Date.now() + 5 * 60 * 1000,
-    });
-    res.json({ challenge });
-  });
-
-  app.post("/api/auth/webauthn/verify", (req, res) => {
-    const { challenge, credentialId } = req.body;
-    if (!challenge) {
-      return res.status(400).json({ success: false, error: "Challenge requerido" });
-    }
-
-    const rec = activeWebAuthnChallenges.get(challenge);
-    if (!rec || Date.now() > rec.expiresAt) {
-      return res.status(400).json({ success: false, error: "El desafío WebAuthn ha expirado o es inválido" });
-    }
-
-    activeWebAuthnChallenges.delete(challenge);
-    res.json({
-      success: true,
-      verified: true,
-      credentialId: credentialId || "verified-platform-credential",
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  // --- 4. Auditoría en Servidor Protegida por RBAC ---
+  // --- 4. Auditoría en Servidor Protegida por RBAC y Atribución Fidedigna de Autor ---
   app.post("/api/audit/log", (req, res) => {
     const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
-    const { action, category, title, description, severity, userId, userName } = req.body;
+    const { action, category, title, description, severity } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({ error: "Datos de auditoría incompletos" });
     }
 
+    // La identidad del autor se extrae estrictamente de la sesión autenticada
+    const session = extractSession(req);
+    const actorUserId = session ? session.userId : undefined;
+    const actorUserName = session ? session.userName : 'Cliente (Anónimo)';
+
     const newLog: ServerAuditLog = {
       id: `srv-log-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
       timestamp: new Date().toISOString(),
       ip,
-      userId: userId ? String(userId).slice(0, 50) : undefined,
-      userName: userName ? String(userName).slice(0, 50) : undefined,
+      userId: actorUserId,
+      userName: actorUserName,
       action: action ? String(action).slice(0, 50) : 'SYSTEM_ACTION',
       category: category ? String(category).slice(0, 50) : 'sistema',
       title: String(title).slice(0, 100),

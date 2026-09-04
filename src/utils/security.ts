@@ -81,43 +81,51 @@ export function generateSecureRandomNumber(min: number, max: number): number {
  */
 export async function hashPin(pin: string, salt: string): Promise<string> {
   const cryptoObj = getCrypto();
-  if (!cryptoObj?.subtle) {
-    // Fallback iterativo en entornos sin Web Crypto Subtle
-    let hash = 0;
-    const str = `${salt}:${pin}`;
-    for (let r = 0; r < 1000; r++) {
-      for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i) + r;
-        hash |= 0;
-      }
-    }
-    return `pbkdf2_fb_${Math.abs(hash).toString(16)}`;
+  if (cryptoObj?.subtle) {
+    const encoder = new TextEncoder();
+    const keyMaterial = await cryptoObj.subtle.importKey(
+      'raw',
+      encoder.encode(pin),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+
+    const saltBuffer = encoder.encode(`finantrack_pbkdf2_${salt}`);
+    const derivedBits = await cryptoObj.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: saltBuffer,
+        iterations: 100000,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      256
+    );
+
+    const hashArray = Array.from(new Uint8Array(derivedBits));
+    const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return `pbkdf2$${hex}`;
   }
 
-  const encoder = new TextEncoder();
-  const keyMaterial = await cryptoObj.subtle.importKey(
-    'raw',
-    encoder.encode(pin),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  );
+  // Entornos Node.js / Vitest
+  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    try {
+      const nodeCrypto = await import('crypto');
+      const derived = nodeCrypto.pbkdf2Sync(
+        pin,
+        `finantrack_pbkdf2_${salt}`,
+        100000,
+        32,
+        'sha256'
+      );
+      return `pbkdf2$${derived.toString('hex')}`;
+    } catch {
+      // fallback to throw
+    }
+  }
 
-  const saltBuffer = encoder.encode(`finantrack_pbkdf2_${salt}`);
-  const derivedBits = await cryptoObj.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: saltBuffer,
-      iterations: 100000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    256
-  );
-
-  const hashArray = Array.from(new Uint8Array(derivedBits));
-  const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return `pbkdf2$${hex}`;
+  throw new Error('API Criptográfica segura (PBKDF2) no disponible en este entorno.');
 }
 
 /**
@@ -182,34 +190,50 @@ export function generateRecoveryKey(): string {
 export async function hashRecoveryKey(key: string, salt: string): Promise<string> {
   const normalized = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const cryptoObj = getCrypto();
-  if (!cryptoObj?.subtle) {
-    throw new Error('Web Crypto Subtle no disponible para derivación segura de clave');
+  if (cryptoObj?.subtle) {
+    const encoder = new TextEncoder();
+    const keyMaterial = await cryptoObj.subtle.importKey(
+      'raw',
+      encoder.encode(normalized),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits']
+    );
+
+    const saltBuffer = encoder.encode(`finantrack_rec_pbkdf2_${salt}`);
+    const derivedBits = await cryptoObj.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: saltBuffer,
+        iterations: 100000,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      256
+    );
+
+    const hashArray = Array.from(new Uint8Array(derivedBits));
+    const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return `pbkdf2_rec$${hex}`;
   }
 
-  const encoder = new TextEncoder();
-  const keyMaterial = await cryptoObj.subtle.importKey(
-    'raw',
-    encoder.encode(normalized),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits']
-  );
+  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    try {
+      const nodeCrypto = await import('crypto');
+      const derived = nodeCrypto.pbkdf2Sync(
+        normalized,
+        `finantrack_rec_pbkdf2_${salt}`,
+        100000,
+        32,
+        'sha256'
+      );
+      return `pbkdf2_rec$${derived.toString('hex')}`;
+    } catch {
+      // fallback to throw
+    }
+  }
 
-  const saltBuffer = encoder.encode(`finantrack_rec_pbkdf2_${salt}`);
-  const derivedBits = await cryptoObj.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: saltBuffer,
-      iterations: 100000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    256
-  );
-
-  const hashArray = Array.from(new Uint8Array(derivedBits));
-  const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return `pbkdf2_rec$${hex}`;
+  throw new Error('API Criptográfica segura (PBKDF2) no disponible para derivación de Recovery Key.');
 }
 
 /**
@@ -260,22 +284,6 @@ function bufferToBase64Url(buffer: ArrayBuffer | Uint8Array): string {
 }
 
 /**
- * Convierte un base64url string a Uint8Array
- */
-function base64UrlToBuffer(base64url: string): Uint8Array {
-  const padding = '='.repeat((4 - (base64url.length % 4)) % 4);
-  const base64 = (base64url + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
-
-/**
  * Comprueba si el navegador soporta Web Authentication API y autenticador de plataforma (Touch ID, Face ID, Windows Hello).
  */
 export async function checkWebAuthnSupport(): Promise<{
@@ -308,7 +316,8 @@ export async function checkWebAuthnSupport(): Promise<{
  * Registra una credencial biométrica en el dispositivo mediante WebAuthn con desafío criptográfico del servidor
  */
 export async function registerBiometricCredential(
-  userName = 'Usuario FinanTrack'
+  userName = 'Usuario FinanTrack',
+  userId = 'usr-default'
 ): Promise<{ success: boolean; credentialId?: string; error?: string }> {
   try {
     const support = await checkWebAuthnSupport();
@@ -316,56 +325,41 @@ export async function registerBiometricCredential(
       return { success: false, error: 'Web Authentication API no está soportada en este navegador.' };
     }
 
-    // 1. Obtener challenge criptográfico del servidor (o generar local si offline)
-    let challengeBuffer: Uint8Array;
-    try {
-      const resp = await fetch('/api/auth/webauthn/challenge');
-      if (resp.ok) {
-        const json = await resp.json();
-        challengeBuffer = base64UrlToBuffer(json.challenge);
-      } else {
-        challengeBuffer = new Uint8Array(32);
-        window.crypto.getRandomValues(challengeBuffer);
-      }
-    } catch {
-      challengeBuffer = new Uint8Array(32);
-      window.crypto.getRandomValues(challengeBuffer);
+    // 1. Obtener opciones criptográficas de registro del servidor
+    const optionsResp = await fetch('/api/auth/webauthn/generate-registration-options', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName, userId }),
+    });
+
+    if (!optionsResp.ok) {
+      const err = await optionsResp.json().catch(() => ({}));
+      return { success: false, error: err.error || 'No se pudieron generar opciones de registro biométrico.' };
     }
 
-    const userId = new Uint8Array(16);
-    window.crypto.getRandomValues(userId);
+    const options = await optionsResp.json();
 
-    const credential = (await navigator.credentials.create({
-      publicKey: {
-        challenge: challengeBuffer,
-        rp: {
-          name: 'FinanTrack - Finanzas Personales',
-        },
-        user: {
-          id: userId,
-          name: 'user@finantrack.app',
-          displayName: userName,
-        },
-        pubKeyCredParams: [
-          { alg: -7, type: 'public-key' },  // ES256 (Touch ID/Face ID/Windows Hello)
-          { alg: -257, type: 'public-key' }, // RS256
-        ],
-        authenticatorSelection: {
-          authenticatorAttachment: 'platform',
-          userVerification: 'required',
-          requireResidentKey: false,
-        },
-        timeout: 60000,
-        attestation: 'none',
-      },
-    })) as PublicKeyCredential | null;
+    // 2. Usar @simplewebauthn/browser para iniciar el registro
+    const { startRegistration } = await import('@simplewebauthn/browser');
+    const registrationResponse = await startRegistration({ optionsJSON: options });
 
-    if (!credential) {
-      return { success: false, error: 'No se pudo generar la credencial de autenticación biométrica.' };
+    // 3. Verificar la respuesta criptográfica en el servidor
+    const verifyResp = await fetch('/api/auth/webauthn/verify-registration', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        response: registrationResponse,
+        userId,
+        userName,
+      }),
+    });
+
+    const verifyData = await verifyResp.json();
+    if (verifyResp.ok && verifyData.verified) {
+      return { success: true, credentialId: verifyData.credentialId || registrationResponse.id };
     }
 
-    const credentialId = bufferToBase64Url(credential.rawId);
-    return { success: true, credentialId };
+    return { success: false, error: verifyData.error || 'Verificación biométrica fallida en servidor' };
   } catch (err: any) {
     console.warn('WebAuthn register error:', err);
     if (err.name === 'NotAllowedError') {
@@ -379,10 +373,11 @@ export async function registerBiometricCredential(
 }
 
 /**
- * Autentica al usuario usando el sensor biométrico del dispositivo y valida con el servidor
+ * Autentica al usuario usando el sensor biométrico del dispositivo y valida criptográficamente con el servidor
  */
 export async function verifyBiometricCredential(
-  credentialId?: string | null
+  credentialId?: string | null,
+  userId = 'usr-default'
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const support = await checkWebAuthnSupport();
@@ -390,70 +385,40 @@ export async function verifyBiometricCredential(
       return { success: false, error: 'Biometría no soportada en este dispositivo.' };
     }
 
-    // 1. Obtener challenge criptográfico del servidor
-    let challengeBuffer: Uint8Array;
-    let serverChallengeStr: string | null = null;
-    try {
-      const resp = await fetch('/api/auth/webauthn/challenge');
-      if (resp.ok) {
-        const json = await resp.json();
-        serverChallengeStr = json.challenge;
-        challengeBuffer = base64UrlToBuffer(json.challenge);
-      } else {
-        challengeBuffer = new Uint8Array(32);
-        window.crypto.getRandomValues(challengeBuffer);
-      }
-    } catch {
-      challengeBuffer = new Uint8Array(32);
-      window.crypto.getRandomValues(challengeBuffer);
+    // 1. Obtener opciones criptográficas de autenticación del servidor
+    const optionsResp = await fetch('/api/auth/webauthn/generate-authentication-options', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credentialId, userId }),
+    });
+
+    if (!optionsResp.ok) {
+      const err = await optionsResp.json().catch(() => ({}));
+      return { success: false, error: err.error || 'No se pudieron generar opciones de autenticación biométrica.' };
     }
 
-    const allowCredentials: PublicKeyCredentialDescriptor[] = [];
-    if (credentialId) {
-      try {
-        allowCredentials.push({
-          id: base64UrlToBuffer(credentialId),
-          type: 'public-key',
-          transports: ['internal'],
-        });
-      } catch (e) {
-        // Ignorar error de parsing
-      }
+    const options = await optionsResp.json();
+
+    // 2. Usar @simplewebauthn/browser para iniciar la autenticación
+    const { startAuthentication } = await import('@simplewebauthn/browser');
+    const authResponse = await startAuthentication({ optionsJSON: options });
+
+    // 3. Enviar aserción al servidor para verificación criptográfica estricta
+    const verifyResp = await fetch('/api/auth/webauthn/verify-authentication', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        response: authResponse,
+        userId,
+      }),
+    });
+
+    const verifyData = await verifyResp.json();
+    if (verifyResp.ok && verifyData.verified) {
+      return { success: true };
     }
 
-    const assertion = (await navigator.credentials.get({
-      publicKey: {
-        challenge: challengeBuffer,
-        userVerification: 'required',
-        allowCredentials: allowCredentials.length > 0 ? allowCredentials : undefined,
-        timeout: 60000,
-      },
-    })) as PublicKeyCredential | null;
-
-    if (!assertion || !assertion.id) {
-      return { success: false, error: 'Verificación biométrica no completada.' };
-    }
-
-    // 2. Si obtuvimos un challenge del servidor, verificar la aserción con el backend
-    if (serverChallengeStr) {
-      try {
-        const verifyResp = await fetch('/api/auth/webauthn/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            challenge: serverChallengeStr,
-            credentialId: assertion.id,
-          }),
-        });
-        if (verifyResp.ok) {
-          return { success: true };
-        }
-      } catch {
-        // Fallback a validación local si no hay conexión al backend
-      }
-    }
-
-    return { success: true };
+    return { success: false, error: verifyData.error || 'Aserción biométrica rechazada por el servidor' };
   } catch (err: any) {
     console.warn('WebAuthn auth error:', err);
     if (err.name === 'NotAllowedError') {
