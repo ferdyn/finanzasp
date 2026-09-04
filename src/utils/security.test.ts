@@ -195,4 +195,48 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     expect(await verifyRecoveryKey(key, modernHash, legacySalt)).toBe(true);
     expect(modernHash).not.toBe(legacyHex);
   });
+
+  it('demonstrates stateful migration cycle: legacy accepted once -> rehashed to PBKDF2 -> stored state updated -> legacy rejected', async () => {
+    // Initial legacy state in storage
+    const legacySalt = 'stateful-salt-legacy';
+    const pin = '7890';
+    const cryptoObj = globalThis.crypto;
+    const encoder = new TextEncoder();
+    const legacyBuffer = await cryptoObj.subtle.digest(
+      'SHA-256',
+      encoder.encode(`finantrack_salt_${legacySalt}:${pin}`)
+    );
+    const legacyHash = Array.from(new Uint8Array(legacyBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    let currentStoredConfig = {
+      pinHash: legacyHash,
+      pinSalt: legacySalt,
+    };
+
+    // Step 1: Detect legacy hash and verify user input
+    expect(currentStoredConfig.pinHash.startsWith('pbkdf2$')).toBe(false);
+    const isLegacyAuthValid = await verifyPin(pin, currentStoredConfig.pinHash, currentStoredConfig.pinSalt);
+    expect(isLegacyAuthValid).toBe(true);
+
+    // Step 2: Instant migration during authentication (rehash + persist)
+    const upgradedModernHash = await hashPin(pin, currentStoredConfig.pinSalt);
+    currentStoredConfig = {
+      ...currentStoredConfig,
+      pinHash: upgradedModernHash,
+    };
+
+    // Step 3: From now on, stored config has pbkdf2$ prefix and legacy hash is gone
+    expect(currentStoredConfig.pinHash.startsWith('pbkdf2$')).toBe(true);
+    expect(currentStoredConfig.pinHash).not.toBe(legacyHash);
+
+    // Step 4: Verification succeeds with modern PBKDF2
+    const isModernAuthValid = await verifyPin(pin, currentStoredConfig.pinHash, currentStoredConfig.pinSalt);
+    expect(isModernAuthValid).toBe(true);
+
+    // Step 5: If an attacker attempts to inject/replay the raw old legacy hash string against the modern stored config, it fails
+    const isReplayValid = await verifyPin(legacyHash, currentStoredConfig.pinHash, currentStoredConfig.pinSalt);
+    expect(isReplayValid).toBe(false);
+  });
 });
