@@ -68,16 +68,44 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       expect(res.body.error).toContain('Acceso denegado');
     });
 
-    it('allows PIN reset with a valid Master Recovery Key', async () => {
+    it('rejects invented recovery key matching regex (RECOVER-AB34-XY89) with 403 Forbidden', async () => {
       // Trigger lockout
       for (let i = 0; i < 5; i++) {
         await request(app).post('/api/auth/pin/attempt').send({ success: false });
       }
 
-      // Reset with valid format recovery key
-      const resetRes = await request(app)
+      const res = await request(app)
         .post('/api/auth/pin/reset')
         .send({ recoveryKey: 'RECOVER-AB34-XY89' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Acceso denegado');
+    });
+
+    it('rejects RESET-CONFIRM bypass string with 403 Forbidden', async () => {
+      // Trigger lockout
+      for (let i = 0; i < 5; i++) {
+        await request(app).post('/api/auth/pin/attempt').send({ success: false });
+      }
+
+      const res = await request(app)
+        .post('/api/auth/pin/reset')
+        .send({ recoveryKey: 'RESET-CONFIRM' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Acceso denegado');
+    });
+
+    it('allows PIN reset ONLY with the cryptographically verified Master Recovery Key', async () => {
+      // Trigger lockout
+      for (let i = 0; i < 5; i++) {
+        await request(app).post('/api/auth/pin/attempt').send({ success: false });
+      }
+
+      // Reset with the real registered master recovery key
+      const resetRes = await request(app)
+        .post('/api/auth/pin/reset')
+        .send({ recoveryKey: 'RECOVER-7K9M-3X2P-8W4Q' });
 
       expect(resetRes.status).toBe(200);
       expect(resetRes.body.success).toBe(true);
@@ -88,10 +116,10 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     });
 
     it('allows PIN reset by an authenticated administrator session', async () => {
-      // Create admin session
+      // Create admin session with valid PIN proof
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin' });
+        .send({ userId: 'user-admin', pin: '1234' });
       const adminToken = sessionRes.body.token;
 
       // Trigger lockout
@@ -114,27 +142,67 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     });
   });
 
-  describe('Session Authentication, Anti-Spoofing & RBAC Protection', () => {
-    it('creates a session where the server enforces the registered role (user-viewer cannot escalate to admin)', async () => {
+  describe('Session Authentication, Proof of Identity & RBAC Protection', () => {
+    it('rejects arbitrary session creation without proof of identity (client -> userId -> session blocked)', async () => {
+      // 1. Bare userId
+      const res1 = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-admin' });
+      expect(res1.status).toBe(401);
+      expect(res1.body.error).toContain('Autenticación requerida');
+
+      // 2. userId + role
+      const res2 = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-admin', role: 'admin' });
+      expect(res2.status).toBe(401);
+
+      // 3. user-manager requesting admin role
+      const res3 = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-manager', role: 'admin' });
+      expect(res3.status).toBe(401);
+    });
+
+    it('authenticates user-admin when valid PIN is provided and grants true admin role', async () => {
       const res = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-viewer', role: 'admin' }); // Client attempts role injection
+        .send({ userId: 'user-admin', pin: '1234' });
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBeDefined();
-      expect(res.body.user.role).toBe('viewer'); // Server enforces true role
-      expect(res.body.user.permissions.length).toBe(0);
-    });
-
-    it('creates an admin session when requesting existing admin account', async () => {
-      const res = await request(app)
-        .post('/api/auth/session')
-        .send({ userId: 'user-admin' });
-
-      expect(res.status).toBe(200);
       expect(res.body.user.role).toBe('admin');
       expect(res.body.user.permissions).toContain('canClearAuditLogs');
       expect(res.body.user.permissions).toContain('canConfigureSecurity');
+    });
+
+    it('enforces registered role when manager logs in with PIN, rejecting privilege escalation to admin', async () => {
+      const res = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-manager', pin: '1234', role: 'admin' }); // Injects role: admin in body
+
+      expect(res.status).toBe(200);
+      expect(res.body.token).toBeDefined();
+      expect(res.body.user.role).toBe('manager'); // Server enforces manager
+      expect(res.body.user.permissions).not.toContain('canConfigureSecurity');
+    });
+
+    it('allows an authenticated administrator to provision a session for another user', async () => {
+      // 1. Authenticate Admin
+      const adminRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-admin', pin: '1234' });
+      const adminToken = adminRes.body.token;
+
+      // 2. Admin provisions session for user-member
+      const provRes = await request(app)
+        .post('/api/auth/session')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ userId: 'user-member' });
+
+      expect(provRes.status).toBe(200);
+      expect(provRes.body.user.id).toBe('user-member');
+      expect(provRes.body.user.role).toBe('member');
     });
 
     it('strictly ignores x-user-* header spoofing attempts (prevents bypass)', async () => {
@@ -157,7 +225,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('allows admin session to view and clear audit logs', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin' });
+        .send({ userId: 'user-admin', pin: '1234' });
 
       const token = sessionRes.body.token;
 
@@ -193,7 +261,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // Viewer
       const viewerRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-viewer' });
+        .send({ userId: 'user-viewer', pin: '1234' });
       const viewerToken = viewerRes.body.token;
 
       const vClear = await request(app)
@@ -205,7 +273,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // Member
       const memberRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member' });
+        .send({ userId: 'user-member', pin: '1234' });
       const memberToken = memberRes.body.token;
 
       const mClear = await request(app)
@@ -217,7 +285,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('authenticates and validates current session via /api/auth/me', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-manager' });
+        .send({ userId: 'user-manager', pin: '1234' });
       const token = sessionRes.body.token;
 
       const meRes = await request(app)
@@ -232,7 +300,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('allows logging out and invalidates session token', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin' });
+        .send({ userId: 'user-admin', pin: '1234' });
       const token = sessionRes.body.token;
 
       // Logout
@@ -249,11 +317,73 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     });
   });
 
+  describe('Multi-Tenant Data Isolation & IDOR Protection', () => {
+    it('prevents User A from reading User B transactions (403 Forbidden)', async () => {
+      // Authenticate as member (David)
+      const memberRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-member', pin: '1234' });
+      const memberToken = memberRes.body.token;
+
+      // Member attempts to read Admin transaction
+      const res = await request(app)
+        .get('/api/transactions/tx-user-admin-1')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Acceso denegado');
+    });
+
+    it('prevents User A from deleting User B transactions (403 Forbidden)', async () => {
+      const memberRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-member', pin: '1234' });
+      const memberToken = memberRes.body.token;
+
+      // Member attempts to delete Admin transaction
+      const res = await request(app)
+        .delete('/api/transactions/tx-user-admin-1')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Acceso denegado');
+    });
+
+    it('prevents User A from accessing User B accounts (403 Forbidden)', async () => {
+      const memberRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-member', pin: '1234' });
+      const memberToken = memberRes.body.token;
+
+      const res = await request(app)
+        .get('/api/accounts/acc-admin-1')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Acceso denegado');
+    });
+
+    it('allows users to access their own resources', async () => {
+      const memberRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-member', pin: '1234' });
+      const memberToken = memberRes.body.token;
+
+      const res = await request(app)
+        .get('/api/transactions/tx-user-member-1')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.transaction.id).toBe('tx-user-member-1');
+      expect(res.body.transaction.userId).toBe('user-member');
+    });
+  });
+
   describe('Audit Log Actor Spoofing Protection', () => {
     it('binds audit actor identity strictly to authenticated session, ignoring forged body payload', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member' });
+        .send({ userId: 'user-member', pin: '1234' });
       const memberToken = sessionRes.body.token;
 
       // Member tries to post a log alleging to be admin

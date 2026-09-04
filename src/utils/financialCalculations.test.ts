@@ -32,6 +32,16 @@ describe('Financial Calculations — Pure Math & Decimal Precision', () => {
     expect(addMoney(0.1, 0.2)).toBe(0.3);
   });
 
+  it('handles arbitrary decimal cent amounts (0.01, 0.10, 0.20, 10.99, 999.99) without precision loss', () => {
+    expect(addMoney(0.01, 0.10)).toBe(0.11);
+    expect(addMoney(0.20, 10.99)).toBe(11.19);
+    expect(addMoney(999.99, 0.01)).toBe(1000.00);
+    expect(subtractMoney(1000.00, 999.99)).toBe(0.01);
+    expect(toCents(0.01)).toBe(1);
+    expect(toCents(10.99)).toBe(1099);
+    expect(fromCents(1099)).toBe(10.99);
+  });
+
   it('handles subtractions and negative decimals accurately', () => {
     expect(subtractMoney(100.1, 0.2)).toBe(99.9);
     expect(subtractMoney(50, 100)).toBe(-50);
@@ -44,7 +54,7 @@ describe('Financial Calculations — Pure Math & Decimal Precision', () => {
   });
 });
 
-describe('calculateAccountBalance', () => {
+describe('calculateAccountBalance — Single Source of Truth & Balance Integrity', () => {
   const baseAccount: Account = {
     id: 'acc-1',
     name: 'Checking Account',
@@ -55,6 +65,30 @@ describe('calculateAccountBalance', () => {
     color: '#004481',
     icon: 'Landmark',
   };
+
+  it('computes exact balance formula: initialBalance + income - expense = currentBalance (1000 + 500 - 200 = 1300)', () => {
+    const transactions: Transaction[] = [
+      {
+        id: 'tx-inc',
+        amount: 500,
+        type: 'income',
+        categoryId: 'cat-salary',
+        accountId: 'acc-1',
+        date: '2026-03-01',
+      },
+      {
+        id: 'tx-exp',
+        amount: 200,
+        type: 'expense',
+        categoryId: 'cat-groceries',
+        accountId: 'acc-1',
+        date: '2026-03-02',
+      },
+    ];
+
+    const finalBalance = calculateAccountBalance(baseAccount, transactions);
+    expect(finalBalance).toBe(1300);
+  });
 
   it('calculates balance with income, expense, and transfers', () => {
     const transactions: Transaction[] = [
@@ -170,6 +204,18 @@ describe('calculateNetWorth', () => {
     // Net Worth: 15950.80 - 1840.25 = 14110.55
     expect(result.totalNetWorth).toBe(14110.55);
   });
+
+  it('correctly calculates negative net worth when liabilities exceed assets', () => {
+    const debtHeavyAccounts: Account[] = [
+      { id: 'acc-c1', name: 'Cash', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '', initialBalance: 500 },
+      { id: 'acc-d1', name: 'Student Loan', type: 'debt', balance: -2000, currency: 'EUR', color: '', icon: '', initialBalance: -2000 },
+    ];
+
+    const result = calculateNetWorth(debtHeavyAccounts);
+    expect(result.totalAssets).toBe(500);
+    expect(result.totalLiabilities).toBe(2000);
+    expect(result.totalNetWorth).toBe(-1500); // Assets - Liabilities = 500 - 2000 = -1500
+  });
 });
 
 describe('calculateBudgetProgress', () => {
@@ -179,6 +225,43 @@ describe('calculateBudgetProgress', () => {
     monthlyLimit: 500,
     period: '2026-03',
   };
+
+  it('computes exact 40% progress for 200 spent on 500 budget limit', () => {
+    const transactions: Transaction[] = [
+      {
+        id: 'tx-b200',
+        amount: 200,
+        type: 'expense',
+        categoryId: 'cat-groceries',
+        accountId: 'acc-1',
+        date: '2026-03-05',
+      },
+    ];
+
+    const progress = calculateBudgetProgress(sampleBudget, transactions);
+    expect(progress.spent).toBe(200);
+    expect(progress.remaining).toBe(300);
+    expect(progress.percentage).toBe(40);
+    expect(progress.isOverBudget).toBe(false);
+  });
+
+  it('handles 0% (zero expense) and 100% (exact limit reached)', () => {
+    // Zero expense
+    const zeroProgress = calculateBudgetProgress(sampleBudget, []);
+    expect(zeroProgress.spent).toBe(0);
+    expect(zeroProgress.remaining).toBe(500);
+    expect(zeroProgress.percentage).toBe(0);
+    expect(zeroProgress.isOverBudget).toBe(false);
+
+    // Exact limit reached
+    const fullProgress = calculateBudgetProgress(sampleBudget, [
+      { id: 'tx-b500', amount: 500, type: 'expense', categoryId: 'cat-groceries', accountId: 'acc-1', date: '2026-03-10' },
+    ]);
+    expect(fullProgress.spent).toBe(500);
+    expect(fullProgress.remaining).toBe(0);
+    expect(fullProgress.percentage).toBe(100);
+    expect(fullProgress.isOverBudget).toBe(false);
+  });
 
   it('calculates progress when spend is below limit', () => {
     const transactions: Transaction[] = [
@@ -262,6 +345,38 @@ describe('calculateSavingsRate', () => {
 });
 
 describe('calculateGoalProgress', () => {
+  it('computes exact 25% progress for 2500 saved on 10000 target', () => {
+    const goal: SavingsGoal = {
+      id: 'g-house',
+      name: 'House Downpayment',
+      targetAmount: 10000,
+      currentAmount: 2500,
+      color: '#3b82f6',
+      icon: 'Home',
+    };
+
+    const result = calculateGoalProgress(goal);
+    expect(result.percentage).toBe(25);
+    expect(result.remainingAmount).toBe(7500);
+    expect(result.isCompleted).toBe(false);
+  });
+
+  it('computes 0% progress when no amount is saved yet', () => {
+    const goal: SavingsGoal = {
+      id: 'g-zero',
+      name: 'New Car',
+      targetAmount: 5000,
+      currentAmount: 0,
+      color: '#3b82f6',
+      icon: 'Car',
+    };
+
+    const result = calculateGoalProgress(goal);
+    expect(result.percentage).toBe(0);
+    expect(result.remainingAmount).toBe(5000);
+    expect(result.isCompleted).toBe(false);
+  });
+
   it('computes goal percentage and completion', () => {
     const goal: SavingsGoal = {
       id: 'g-1',
@@ -323,6 +438,54 @@ describe('Atomic Transaction Impact — Add, Edit, Delete Cycle', () => {
     { id: 'acc-1', name: 'Main', type: 'checking', balance: 1000, currency: 'EUR', color: '', icon: '', initialBalance: 1000 },
     { id: 'acc-2', name: 'Savings', type: 'savings', balance: 500, currency: 'EUR', color: '', icon: '', initialBalance: 500 },
   ];
+
+  it('verifies expense edit: expense of 100 edited to 150 modifies balance by exactly -50 without duplication', () => {
+    // 1. Initial balance 1000 -> Add expense 100
+    const txExpense1: Transaction = {
+      id: 'tx-exp-1',
+      amount: 100,
+      type: 'expense',
+      categoryId: 'food',
+      accountId: 'acc-1',
+      date: '2026-03-01',
+    };
+    const afterExpenseAdd = applyTransactionToAccounts(initialAccounts, txExpense1);
+    expect(afterExpenseAdd.find(a => a.id === 'acc-1')?.balance).toBe(900);
+
+    // 2. Edit expense from 100 to 150 -> balance becomes 850 (delta is -50)
+    const txExpense2: Transaction = {
+      ...txExpense1,
+      amount: 150,
+    };
+    const afterExpenseEdit = applyTransactionUpdateToAccounts(afterExpenseAdd, txExpense1, txExpense2);
+    expect(afterExpenseEdit.find(a => a.id === 'acc-1')?.balance).toBe(850);
+
+    // 3. Delete expense -> balance returns exactly to 1000
+    const afterExpenseDelete = applyTransactionDeletionToAccounts(afterExpenseEdit, txExpense2);
+    expect(afterExpenseDelete.find(a => a.id === 'acc-1')?.balance).toBe(1000);
+  });
+
+  it('verifies transfer integrity: A=1000, B=500, Transfer 200 from A to B => A=800, B=700 and no double counting in period metrics', () => {
+    const transfer: Transaction = {
+      id: 'tx-t-exact',
+      amount: 200,
+      type: 'transfer',
+      categoryId: 'internal-transfer',
+      accountId: 'acc-1',
+      toAccountId: 'acc-2',
+      date: '2026-03-01',
+    };
+
+    const afterTransfer = applyTransactionToAccounts(initialAccounts, transfer);
+    expect(afterTransfer.find(a => a.id === 'acc-1')?.balance).toBe(800);
+    expect(afterTransfer.find(a => a.id === 'acc-2')?.balance).toBe(700);
+
+    // Verify operational period metrics do NOT count internal transfer as operational income or expense
+    const metrics = calculatePeriodMetrics([transfer], '2026-03');
+    expect(metrics.income).toBe(0);
+    expect(metrics.expense).toBe(0);
+    expect(metrics.net).toBe(0);
+  });
 
   it('maintains integrity across Income Add -> Edit -> Delete cycle', () => {
     // 1. Add income +100

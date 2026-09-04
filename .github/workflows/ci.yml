@@ -24,8 +24,11 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: TypeScript & Static Lint Verification
+        run: npm run lint
+
       - name: Run Cryptographic, RBAC & Financial Test Suites
-        run: npx vitest run
+        run: npm test
 
       - name: Production Bundle & Server Compilation
         run: npm run build

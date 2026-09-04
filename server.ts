@@ -91,6 +91,93 @@ export const serverUserRegistry = new Map<string, ServerUserRecord>([
   ['user-dependent', { id: 'user-dependent', name: 'Sofía Mendoza', email: 'sofia@finantrack.app', role: 'viewer', status: 'active' }],
 ]);
 
+export interface ServerUserCredential {
+  userId: string;
+  pinHash: string;
+  pinSalt: string;
+}
+
+export function hashPinSync(pin: string, salt: string): string {
+  const derived = crypto.pbkdf2Sync(
+    pin,
+    `finantrack_pbkdf2_${salt}`,
+    100000,
+    32,
+    'sha256'
+  );
+  return `pbkdf2$${derived.toString('hex')}`;
+}
+
+export function verifyPinSync(pin: string, storedHash: string, salt: string): boolean {
+  if (!pin || !storedHash || !salt) return false;
+  const computed = hashPinSync(pin, salt);
+  const bufA = Buffer.from(computed, 'utf8');
+  const bufB = Buffer.from(storedHash, 'utf8');
+  return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Almacén seguro de credenciales PBKDF2 para usuarios
+export const serverUserCredentials = new Map<string, ServerUserCredential>([
+  ['user-admin', { userId: 'user-admin', pinHash: hashPinSync('1234', 'salt-admin-sec'), pinSalt: 'salt-admin-sec' }],
+  ['user-manager', { userId: 'user-manager', pinHash: hashPinSync('1234', 'salt-manager-sec'), pinSalt: 'salt-manager-sec' }],
+  ['user-member', { userId: 'user-member', pinHash: hashPinSync('1234', 'salt-member-sec'), pinSalt: 'salt-member-sec' }],
+  ['user-viewer', { userId: 'user-viewer', pinHash: hashPinSync('1234', 'salt-viewer-sec'), pinSalt: 'salt-viewer-sec' }],
+  ['user-dependent', { userId: 'user-dependent', pinHash: hashPinSync('1234', 'salt-dep-sec'), pinSalt: 'salt-dep-sec' }],
+]);
+
+// Configuración de Clave Maestra de Recuperación Criptográfica
+export const DEFAULT_RECOVERY_KEY_SALT = 'finantrack-rec-salt-master-2026';
+export const REGISTERED_MASTER_RECOVERY_KEY = 'RECOVER-7K9M-3X2P-8W4Q';
+
+export function hashRecoveryKeySync(key: string, salt: string): string {
+  const normalized = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const derived = crypto.pbkdf2Sync(
+    normalized,
+    `finantrack_rec_pbkdf2_${salt}`,
+    100000,
+    32,
+    'sha256'
+  );
+  return `pbkdf2_rec$${derived.toString('hex')}`;
+}
+
+export let serverRecoveryConfig = {
+  salt: DEFAULT_RECOVERY_KEY_SALT,
+  hash: hashRecoveryKeySync(REGISTERED_MASTER_RECOVERY_KEY, DEFAULT_RECOVERY_KEY_SALT),
+};
+
+// Almacén multi-usuario en servidor para pruebas y protección IDOR
+export interface ServerTransactionRecord {
+  id: string;
+  userId: string;
+  accountId: string;
+  amount: number;
+  type: 'income' | 'expense' | 'transfer';
+  categoryId: string;
+  date: string;
+  description?: string;
+  toAccountId?: string;
+}
+
+export interface ServerAccountRecord {
+  id: string;
+  userId: string;
+  name: string;
+  type: string;
+  balance: number;
+  currency: string;
+}
+
+export const serverTransactions = new Map<string, ServerTransactionRecord>([
+  ['tx-user-admin-1', { id: 'tx-user-admin-1', userId: 'user-admin', accountId: 'acc-admin-1', amount: 500, type: 'income', categoryId: 'salary', date: '2026-03-01' }],
+  ['tx-user-member-1', { id: 'tx-user-member-1', userId: 'user-member', accountId: 'acc-member-1', amount: 100, type: 'expense', categoryId: 'groceries', date: '2026-03-01' }],
+]);
+
+export const serverAccounts = new Map<string, ServerAccountRecord>([
+  ['acc-admin-1', { id: 'acc-admin-1', userId: 'user-admin', name: 'Cuenta Admin', type: 'checking', balance: 5000, currency: 'EUR' }],
+  ['acc-member-1', { id: 'acc-member-1', userId: 'user-member', name: 'Cuenta David', type: 'checking', balance: 800, currency: 'EUR' }],
+]);
+
 export interface ServerUserSession {
   token: string;
   userId: string;
@@ -224,37 +311,53 @@ export function createApp(): express.Express {
 
   // --- 1. Sesiones de Usuario y RBAC ---
   app.post("/api/auth/session", (req, res) => {
-    const { userId, role, name, email } = req.body;
-    const requestedUserId = String(userId || 'user-viewer').slice(0, 50);
-    const existingUser = serverUserRegistry.get(requestedUserId);
+    const { userId, pin, password, credentialId } = req.body || {};
+    const callerSession = extractSession(req);
+    const callerPerms = callerSession ? (ROLE_PERMISSIONS[callerSession.role] || []) : [];
 
-    let finalRole: ServerUserRole = 'viewer';
-    let finalName = String(name || 'Usuario FinanTrack').slice(0, 80);
-    let finalUserId = requestedUserId;
+    // Comprobación de identidad estricta:
+    // Opción 1: Un administrador autenticado y verificado aprovisiona la sesión
+    const isCallerAdmin = callerSession && callerPerms.includes('canManageUsers');
 
-    if (existingUser) {
-      // Si el usuario existe en el registro del servidor, el servidor impone su rol y nombre reales
-      finalRole = existingUser.role;
-      finalName = existingUser.name;
-      finalUserId = existingUser.id;
+    const requestedUserId = String(userId || '').slice(0, 50);
+    const targetUser = serverUserRegistry.get(requestedUserId);
+
+    if (!targetUser) {
+      return res.status(401).json({
+        error: "Usuario no encontrado o credenciales inválidas.",
+      });
+    }
+
+    let isAuthenticated = false;
+
+    if (isCallerAdmin) {
+      isAuthenticated = true;
     } else {
-      // Si es un usuario nuevo: solo un administrador autenticado puede asignarle un rol privilegiado
-      const callerSession = extractSession(req);
-      const callerPerms = callerSession ? (ROLE_PERMISSIONS[callerSession.role] || []) : [];
-      if (callerSession && callerPerms.includes('canManageUsers')) {
-        finalRole = ['admin', 'manager', 'member', 'viewer'].includes(role) ? role : 'viewer';
-        serverUserRegistry.set(finalUserId, {
-          id: finalUserId,
-          name: finalName,
-          email: String(email || `${finalUserId}@finantrack.app`).slice(0, 80),
-          role: finalRole,
-          status: 'active',
-        });
-      } else {
-        // Principio de mínimo privilegio para auto-registro o clientes anónimos
-        finalRole = 'viewer';
+      const userCreds = serverUserCredentials.get(requestedUserId);
+
+      // Verificación de credencial contra hash seguro en servidor
+      if (pin && userCreds && verifyPinSync(String(pin), userCreds.pinHash, userCreds.pinSalt)) {
+        isAuthenticated = true;
+      } else if (password && userCreds && verifyPinSync(String(password), userCreds.pinHash, userCreds.pinSalt)) {
+        isAuthenticated = true;
+      } else if (credentialId && serverWebAuthnCredentials.has(credentialId)) {
+        const webAuthnCred = serverWebAuthnCredentials.get(credentialId)!;
+        if (webAuthnCred.userId === requestedUserId) {
+          isAuthenticated = true;
+        }
       }
     }
+
+    if (!isAuthenticated) {
+      return res.status(401).json({
+        error: "Autenticación requerida. Se debe proporcionar una credencial válida (PIN o biométrica) para obtener una sesión.",
+      });
+    }
+
+    // El servidor impone el rol real registrado
+    const finalRole: ServerUserRole = targetUser.role;
+    const finalName = targetUser.name;
+    const finalUserId = targetUser.id;
 
     const token = crypto.randomBytes(32).toString('hex');
     const session: ServerUserSession = {
@@ -391,15 +494,45 @@ export function createApp(): express.Express {
 
     const hasAdminSession = session && (ROLE_PERMISSIONS[session.role] || []).includes('canConfigureSecurity');
     
-    // Comprobar formato válido de clave de recuperación: RECOVER-XXXX-XXXX
-    const recoveryPattern = /^RECOVER-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/i;
-    const isRecoveryKeyValid = typeof recoveryKey === 'string' && (
-      recoveryPattern.test(recoveryKey.trim()) || recoveryKey.trim().toUpperCase() === 'RESET-CONFIRM'
-    );
+    let isRecoveryAuthorized = false;
 
-    if (!hasAdminSession && !isRecoveryKeyValid) {
+    if (hasAdminSession) {
+      isRecoveryAuthorized = true;
+    } else if (typeof recoveryKey === 'string' && recoveryKey.trim().length > 0) {
+      try {
+        const computedHash = hashRecoveryKeySync(recoveryKey, serverRecoveryConfig.salt);
+        const bufA = Buffer.from(computedHash, 'utf8');
+        const bufB = Buffer.from(serverRecoveryConfig.hash, 'utf8');
+        if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
+          isRecoveryAuthorized = true;
+        }
+      } catch {
+        isRecoveryAuthorized = false;
+      }
+    }
+
+    if (!isRecoveryAuthorized) {
+      let record = ipLockoutState.get(ip) || { failedAttempts: 0, lockoutUntil: 0, lastAttempt: Date.now() };
+      record.failedAttempts += 1;
+      record.lastAttempt = Date.now();
+      if (record.failedAttempts >= 5) {
+        record.lockoutUntil = Date.now() + 30 * 1000;
+      }
+      ipLockoutState.set(ip, record);
+
+      serverAuditLogs.unshift({
+        id: `srv-audit-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+        timestamp: new Date().toISOString(),
+        ip,
+        action: 'FAILED_RECOVERY_ATTEMPT',
+        category: 'seguridad',
+        title: 'Intento Fallido de Recuperación',
+        description: `Intento de restablecimiento de seguridad con clave de recuperación no autorizada desde ${ip}.`,
+        severity: 'danger',
+      });
+
       return res.status(403).json({
-        error: "Acceso denegado. Se requiere una sesión de administrador o una Clave Maestra de Recuperación válida para restablecer el bloqueo.",
+        error: "Acceso denegado. Clave de recuperación incorrecta o no autorizada.",
       });
     }
 
@@ -416,11 +549,88 @@ export function createApp(): express.Express {
       title: 'Restablecimiento de Seguridad y PIN',
       description: hasAdminSession
         ? `Bloqueo de PIN restablecido por el administrador ${session?.userName}.`
-        : 'Bloqueo de PIN restablecido mediante Clave Maestra de Recuperación.',
+        : 'Bloqueo de PIN restablecido mediante Clave Maestra de Recuperación verificada criptográficamente.',
       severity: 'warning',
     });
 
     res.json({ success: true, message: "Contador de intentos de PIN reseteado exitosamente" });
+  });
+
+  // --- Endpoints Multi-Usuario con Protección Estricta contra IDOR ---
+  app.get("/api/transactions/:id", (req, res) => {
+    const session = extractSession(req);
+    if (!session) {
+      return res.status(401).json({ error: "Autenticación requerida." });
+    }
+
+    const tx = serverTransactions.get(req.params.id);
+    if (!tx) {
+      return res.status(404).json({ error: "Transacción no encontrada." });
+    }
+
+    // Regla IDOR: El usuario solo puede acceder a sus propios recursos salvo rol admin
+    if (tx.userId !== session.userId && session.role !== 'admin') {
+      return res.status(403).json({ error: "Acceso denegado: recurso perteneciente a otro usuario." });
+    }
+
+    res.json({ transaction: tx });
+  });
+
+  app.delete("/api/transactions/:id", (req, res) => {
+    const session = extractSession(req);
+    if (!session) {
+      return res.status(401).json({ error: "Autenticación requerida." });
+    }
+
+    const tx = serverTransactions.get(req.params.id);
+    if (!tx) {
+      return res.status(404).json({ error: "Transacción no encontrada." });
+    }
+
+    // Regla IDOR: El usuario solo puede eliminar sus propios recursos salvo rol admin
+    if (tx.userId !== session.userId && session.role !== 'admin') {
+      return res.status(403).json({ error: "Acceso denegado: no puedes eliminar recursos de otro usuario." });
+    }
+
+    serverTransactions.delete(req.params.id);
+    res.json({ success: true, message: "Transacción eliminada." });
+  });
+
+  app.get("/api/accounts/:id", (req, res) => {
+    const session = extractSession(req);
+    if (!session) {
+      return res.status(401).json({ error: "Autenticación requerida." });
+    }
+
+    const acc = serverAccounts.get(req.params.id);
+    if (!acc) {
+      return res.status(404).json({ error: "Cuenta no encontrada." });
+    }
+
+    if (acc.userId !== session.userId && session.role !== 'admin') {
+      return res.status(403).json({ error: "Acceso denegado: recurso perteneciente a otro usuario." });
+    }
+
+    res.json({ account: acc });
+  });
+
+  app.delete("/api/accounts/:id", (req, res) => {
+    const session = extractSession(req);
+    if (!session) {
+      return res.status(401).json({ error: "Autenticación requerida." });
+    }
+
+    const acc = serverAccounts.get(req.params.id);
+    if (!acc) {
+      return res.status(404).json({ error: "Cuenta no encontrada." });
+    }
+
+    if (acc.userId !== session.userId && session.role !== 'admin') {
+      return res.status(403).json({ error: "Acceso denegado: no puedes eliminar recursos de otro usuario." });
+    }
+
+    serverAccounts.delete(req.params.id);
+    res.json({ success: true, message: "Cuenta eliminada." });
   });
 
   // --- 3. WebAuthn: Registro y Verificación Criptográfica con @simplewebauthn/server ---
