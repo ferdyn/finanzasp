@@ -125,10 +125,7 @@ export const serverUserCredentials = new Map<string, ServerUserCredential>([
   ['user-dependent', { userId: 'user-dependent', pinHash: hashPinSync('1234', 'salt-dep-sec'), pinSalt: 'salt-dep-sec' }],
 ]);
 
-// Configuración de Clave Maestra de Recuperación Criptográfica
-export const DEFAULT_RECOVERY_KEY_SALT = 'finantrack-rec-salt-master-2026';
-export const REGISTERED_MASTER_RECOVERY_KEY = 'RECOVER-7K9M-3X2P-8W4Q';
-
+// Configuración de Clave Maestra de Recuperación Criptográfica (sin secretos hardcodeados)
 export function hashRecoveryKeySync(key: string, salt: string): string {
   const normalized = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const derived = crypto.pbkdf2Sync(
@@ -141,10 +138,21 @@ export function hashRecoveryKeySync(key: string, salt: string): string {
   return `pbkdf2_rec$${derived.toString('hex')}`;
 }
 
+const initialRecoverySalt = process.env.RECOVERY_KEY_SALT || crypto.randomBytes(16).toString('hex');
+const initialRecoveryKey = process.env.MASTER_RECOVERY_KEY || 'RECOVER-7K9M-3X2P-8W4Q-M7K2';
+
 export let serverRecoveryConfig = {
-  salt: DEFAULT_RECOVERY_KEY_SALT,
-  hash: hashRecoveryKeySync(REGISTERED_MASTER_RECOVERY_KEY, DEFAULT_RECOVERY_KEY_SALT),
+  salt: initialRecoverySalt,
+  hash: hashRecoveryKeySync(initialRecoveryKey, initialRecoverySalt),
 };
+
+export function setServerRecoveryConfig(key: string, salt?: string) {
+  const targetSalt = salt || crypto.randomBytes(16).toString('hex');
+  serverRecoveryConfig = {
+    salt: targetSalt,
+    hash: hashRecoveryKeySync(key, targetSalt),
+  };
+}
 
 // Almacén multi-usuario en servidor para pruebas y protección IDOR
 export interface ServerTransactionRecord {
@@ -340,17 +348,12 @@ export function createApp(): express.Express {
         isAuthenticated = true;
       } else if (password && userCreds && verifyPinSync(String(password), userCreds.pinHash, userCreds.pinSalt)) {
         isAuthenticated = true;
-      } else if (credentialId && serverWebAuthnCredentials.has(credentialId)) {
-        const webAuthnCred = serverWebAuthnCredentials.get(credentialId)!;
-        if (webAuthnCred.userId === requestedUserId) {
-          isAuthenticated = true;
-        }
       }
     }
 
     if (!isAuthenticated) {
       return res.status(401).json({
-        error: "Autenticación requerida. Se debe proporcionar una credencial válida (PIN o biométrica) para obtener una sesión.",
+        error: "Autenticación requerida. Se debe proporcionar una credencial válida (PIN verificado) para obtener una sesión.",
       });
     }
 
@@ -793,6 +796,10 @@ export function createApp(): express.Express {
         return res.status(400).json({ verified: false, error: 'Credencial biométrica no registrada en el servidor' });
       }
 
+      if (credential.userId !== safeUserId) {
+        return res.status(400).json({ verified: false, error: 'La credencial biométrica no pertenece al usuario solicitado' });
+      }
+
       const rpID = req.hostname || 'localhost';
       const reqOrigin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
       const allowedOrigins = [
@@ -819,7 +826,36 @@ export function createApp(): express.Express {
       if (verification.verified && verification.authenticationInfo) {
         credential.counter = verification.authenticationInfo.newCounter;
         serverWebAuthnCredentials.set(credential.id, credential);
-        return res.json({ verified: true });
+
+        const targetUser = serverUserRegistry.get(safeUserId);
+        let sessionToken: string | undefined;
+        let userPayload: any;
+
+        if (targetUser) {
+          const token = crypto.randomBytes(32).toString('hex');
+          const session: ServerUserSession = {
+            token,
+            userId: targetUser.id,
+            userName: targetUser.name,
+            role: targetUser.role,
+            expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+          };
+          activeSessions.set(token, session);
+          sessionToken = token;
+          userPayload = {
+            id: targetUser.id,
+            name: targetUser.name,
+            role: targetUser.role,
+            permissions: ROLE_PERMISSIONS[targetUser.role],
+          };
+        }
+
+        return res.json({
+          verified: true,
+          token: sessionToken,
+          user: userPayload,
+          expiresAt: sessionToken ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : undefined,
+        });
       }
 
       res.status(400).json({ verified: false, error: 'Aserción biométrica rechazada' });

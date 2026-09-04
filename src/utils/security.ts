@@ -160,27 +160,39 @@ export async function verifyPin(
 }
 
 /**
+ * Alfabeto Base32 de alta legibilidad (32 caracteres = 2^5, exactamente 5 bits por caracter).
+ * Excluye caracteres visualmente ambiguos (0, 1, I, O).
+ */
+export const CROCKFORD_BASE32_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+/**
  * Genera una Clave Maestra de Recuperación de Seguridad con entropía criptográfica de alta seguridad.
  * Utiliza exclusivamente crypto.getRandomValues() para eliminar cualquier predictibilidad.
  * Formato: RECOVER-XXXX-XXXX-XXXX-XXXX (16 caracteres base-32 = 80 bits de entropía pura)
  */
 export function generateRecoveryKey(): string {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   const cryptoObj = getCrypto();
   if (!cryptoObj || !cryptoObj.getRandomValues) {
     throw new Error('Web Crypto API no disponible para generación de Recovery Key criptográfica.');
   }
 
-  const randomBytes = new Uint8Array(8);
+  // 16 caracteres = 4 bloques de 4 caracteres
+  // Dado que el alfabeto tiene exactamente 32 caracteres (2^5), (byte & 31)
+  // tiene una distribución estrictamente uniforme (256 / 32 = 8 valores posibles por símbolo)
+  // sin introducir ningún sesgo de módulo.
+  const randomBytes = new Uint8Array(16);
   cryptoObj.getRandomValues(randomBytes);
 
-  let p1 = '';
-  let p2 = '';
-  for (let i = 0; i < 4; i++) {
-    p1 += chars.charAt(randomBytes[i] % chars.length);
-    p2 += chars.charAt(randomBytes[4 + i] % chars.length);
+  const blocks: string[] = [];
+  for (let b = 0; b < 4; b++) {
+    let block = '';
+    for (let i = 0; i < 4; i++) {
+      const idx = randomBytes[b * 4 + i] & 31; // 0..31 sin sesgo sobre 32 caracteres
+      block += CROCKFORD_BASE32_ALPHABET.charAt(idx);
+    }
+    blocks.push(block);
   }
-  return `RECOVER-${p1}-${p2}`;
+  return `RECOVER-${blocks.join('-')}`;
 }
 
 /**
@@ -378,7 +390,7 @@ export async function registerBiometricCredential(
 export async function verifyBiometricCredential(
   credentialId?: string | null,
   userId = 'usr-default'
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; token?: string; user?: any }> {
   try {
     const support = await checkWebAuthnSupport();
     if (!support.isSupported) {
@@ -415,7 +427,11 @@ export async function verifyBiometricCredential(
 
     const verifyData = await verifyResp.json();
     if (verifyResp.ok && verifyData.verified) {
-      return { success: true };
+      return {
+        success: true,
+        token: verifyData.token,
+        user: verifyData.user,
+      };
     }
 
     return { success: false, error: verifyData.error || 'Aserción biométrica rechazada por el servidor' };

@@ -364,9 +364,7 @@ export const LockScreen: React.FC = () => {
                 Recuperación Segura de Acceso
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                {hasRecoveryKey
-                  ? 'Para proteger tus datos contra accesos no autorizados, introduce la Clave Maestra de Recuperación generada al activar tu PIN (formato RECOVER-XXXX-XXXX).'
-                  : 'Introduce tu clave de seguridad o escribe "RESET-CONFIRM" para restablecer el bloqueo sin perder tus datos financieros.'}
+                Para proteger tus datos contra accesos no autorizados, introduce la Clave Maestra de Recuperación generada al activar tu PIN (formato RECOVER-XXXX-XXXX-XXXX-XXXX).
               </p>
             </div>
 
@@ -401,7 +399,7 @@ export const LockScreen: React.FC = () => {
                     setRecoveryInput(e.target.value.toUpperCase());
                     setRecoveryError('');
                   }}
-                  placeholder={hasRecoveryKey ? 'RECOVER-XXXX-XXXX' : 'RESET-CONFIRM'}
+                  placeholder="RECOVER-XXXX-XXXX-XXXX-XXXX"
                   autoFocus
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-sm font-mono font-bold tracking-wider text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 uppercase"
                 />

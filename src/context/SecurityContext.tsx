@@ -399,7 +399,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return { success: false, error: 'Por favor introduce tu Clave Maestra de Recuperación.' };
       }
 
-      // Si existe clave de recuperación configurada
+      // Si existe clave de recuperación configurada localmente
       if (config.recoveryKeyHash && config.recoveryKeySalt) {
         const isValid = await verifyRecoveryKey(enteredKey, config.recoveryKeyHash, config.recoveryKeySalt);
         if (!isValid) {
@@ -415,14 +415,41 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             error: 'La Clave Maestra no coincide. Comprueba los caracteres e intenta de nuevo.',
           };
         }
+
+        // Si el hash previo era legado SHA-256, migrarlo a PBKDF2 moderno
+        if (!config.recoveryKeyHash.startsWith('pbkdf2_rec$')) {
+          const modernRecHash = await hashRecoveryKey(enteredKey, config.recoveryKeySalt);
+          const upgraded = { ...config, recoveryKeyHash: modernRecHash };
+          setConfig(upgraded);
+          saveSecurityConfig(upgraded);
+        }
       } else {
-        // Modo de compatibilidad para instalaciones previas sin clave inicial:
-        // Requiere clave de anulación de emergencia explícita
-        const clean = enteredKey.trim().toUpperCase();
-        if (clean !== 'RESET-CONFIRM' && clean.length < 6) {
+        // Si no existe clave local, intentar validación con la Clave Maestra del Servidor
+        try {
+          const srvResp = await fetch('/api/auth/pin/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ recoveryKey: enteredKey.trim() }),
+          });
+
+          if (!srvResp.ok) {
+            const errData = await srvResp.json().catch(() => ({}));
+            const attempt = recordFailedAttempt();
+            if (attempt.isLockedOut) {
+              return {
+                success: false,
+                error: `Clave incorrecta. Dispositivo bloqueado por ${attempt.remainingSeconds}s.`,
+              };
+            }
+            return {
+              success: false,
+              error: errData.error || 'La Clave Maestra de Recuperación no es válida en el servidor.',
+            };
+          }
+        } catch {
           return {
             success: false,
-            error: 'Para restablecer la instalación sin clave previa, escribe "RESET-CONFIRM".',
+            error: 'No se pudo contactar al servidor para verificar la Clave Maestra de Recuperación.',
           };
         }
       }

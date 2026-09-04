@@ -203,7 +203,9 @@ export function validateTransfer(
  */
 export function calculateAccountBalance(
   account: Account,
-  transactions: Transaction[]
+  transactions: Transaction[],
+  accounts?: Account[],
+  exchangeRates: Record<string, number> = DEFAULT_EXCHANGE_RATES
 ): number {
   const baseCents = toCents(account.initialBalance !== undefined ? account.initialBalance : account.balance);
   let totalDeltaCents = 0;
@@ -224,7 +226,14 @@ export function calculateAccountBalance(
         totalDeltaCents -= amountCents;
       }
       if (tx.toAccountId === account.id) {
-        totalDeltaCents += amountCents;
+        let incomingAmount = tx.amount;
+        if (accounts) {
+          const fromAcc = accounts.find(a => a.id === tx.accountId);
+          if (fromAcc && fromAcc.currency && account.currency && fromAcc.currency !== account.currency) {
+            incomingAmount = convertCurrency(tx.amount, fromAcc.currency, account.currency, exchangeRates);
+          }
+        }
+        totalDeltaCents += toCents(incomingAmount);
       }
     }
   }
@@ -473,9 +482,10 @@ export function calculatePeriodMetrics(
  */
 export function applyTransactionToAccounts(
   accounts: Account[],
-  transaction: Transaction
+  transaction: Transaction,
+  exchangeRates: Record<string, number> = DEFAULT_EXCHANGE_RATES
 ): Account[] {
-  const impact = calculateTransactionImpact(transaction);
+  const impact = calculateTransactionImpact(transaction, accounts, exchangeRates);
 
   return accounts.map(acc => {
     let balanceCents = toCents(acc.balance);
@@ -500,10 +510,11 @@ export function applyTransactionToAccounts(
 export function applyTransactionUpdateToAccounts(
   accounts: Account[],
   oldTransaction: Transaction,
-  newTransaction: Transaction
+  newTransaction: Transaction,
+  exchangeRates: Record<string, number> = DEFAULT_EXCHANGE_RATES
 ): Account[] {
   // 1. Revertir transacción vieja
-  const oldImpact = calculateTransactionImpact(oldTransaction);
+  const oldImpact = calculateTransactionImpact(oldTransaction, accounts, exchangeRates);
   let updatedAccounts = accounts.map(acc => {
     let balanceCents = toCents(acc.balance);
 
@@ -521,7 +532,7 @@ export function applyTransactionUpdateToAccounts(
   });
 
   // 2. Aplicar transacción nueva
-  const newImpact = calculateTransactionImpact(newTransaction);
+  const newImpact = calculateTransactionImpact(newTransaction, updatedAccounts, exchangeRates);
   updatedAccounts = updatedAccounts.map(acc => {
     let balanceCents = toCents(acc.balance);
 
@@ -546,9 +557,10 @@ export function applyTransactionUpdateToAccounts(
  */
 export function applyTransactionDeletionToAccounts(
   accounts: Account[],
-  transaction: Transaction
+  transaction: Transaction,
+  exchangeRates: Record<string, number> = DEFAULT_EXCHANGE_RATES
 ): Account[] {
-  const impact = calculateTransactionImpact(transaction);
+  const impact = calculateTransactionImpact(transaction, accounts, exchangeRates);
 
   return accounts.map(acc => {
     let balanceCents = toCents(acc.balance);
@@ -666,7 +678,8 @@ export interface AccountReconciliationDiscrepancy {
  */
 export function auditAccountIntegrity(
   accounts: Account[],
-  transactions: Transaction[]
+  transactions: Transaction[],
+  exchangeRates: Record<string, number> = DEFAULT_EXCHANGE_RATES
 ): {
   isHealthy: boolean;
   discrepancies: AccountReconciliationDiscrepancy[];
@@ -674,7 +687,7 @@ export function auditAccountIntegrity(
   const discrepancies: AccountReconciliationDiscrepancy[] = [];
 
   for (const account of accounts) {
-    const calculated = calculateAccountBalance(account, transactions);
+    const calculated = calculateAccountBalance(account, transactions, accounts, exchangeRates);
     const diffCents = Math.abs(toCents(account.balance) - toCents(calculated));
     if (diffCents > 0) {
       discrepancies.push({

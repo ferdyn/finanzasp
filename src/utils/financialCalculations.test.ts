@@ -696,5 +696,21 @@ describe('isLiabilityAccount & Consolidated Multi-Currency Net Worth', () => {
     // acc-usd receives 100 EUR converted to USD: 100 * 1.08 = 108 USD
     expect(impact.toAccountId).toBe('acc-usd');
     expect(impact.toDelta).toBe(108);
+
+    // Test calculateAccountBalance with cross-currency transfer
+    const updatedEurBalance = calculateAccountBalance(accounts[0], [tx], accounts);
+    const updatedUsdBalance = calculateAccountBalance(accounts[1], [tx], accounts);
+    expect(updatedEurBalance).toBe(400); // 500 - 100
+    expect(updatedUsdBalance).toBe(1108); // 1000 + 108
+
+    // Test applyTransactionToAccounts
+    const appliedAccounts = applyTransactionToAccounts(accounts, tx);
+    expect(appliedAccounts.find(a => a.id === 'acc-eur')?.balance).toBe(400);
+    expect(appliedAccounts.find(a => a.id === 'acc-usd')?.balance).toBe(1108);
+
+    // Test applyTransactionDeletionToAccounts (reverting the transfer)
+    const revertedAccounts = applyTransactionDeletionToAccounts(appliedAccounts, tx);
+    expect(revertedAccounts.find(a => a.id === 'acc-eur')?.balance).toBe(500);
+    expect(revertedAccounts.find(a => a.id === 'acc-usd')?.balance).toBe(1000);
   });
 });

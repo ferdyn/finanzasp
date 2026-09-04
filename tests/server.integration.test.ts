@@ -1,6 +1,18 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
-import { createApp, ipLockoutState, serverAuditLogs, activeSessions, serverUserRegistry } from '../server';
+import {
+  createApp,
+  ipLockoutState,
+  serverAuditLogs,
+  activeSessions,
+  serverUserRegistry,
+  serverRecoveryConfig,
+  setServerRecoveryConfig,
+  activeWebAuthnChallenges,
+  serverWebAuthnCredentials,
+} from '../server';
+
+const TEST_MASTER_RECOVERY_KEY = 'RECOVER-7K9M-3X2P-8W4Q-M7K2';
 
 describe('FinanTrack Server Security & Integration Tests — Supertest Suite', () => {
   let app: any;
@@ -10,6 +22,8 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     ipLockoutState.clear();
     serverAuditLogs.length = 0;
     activeSessions.clear();
+    activeWebAuthnChallenges.clear();
+    setServerRecoveryConfig(TEST_MASTER_RECOVERY_KEY, 'test-rec-salt-999');
   });
 
   describe('Health Endpoint', () => {
@@ -105,7 +119,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // Reset with the real registered master recovery key
       const resetRes = await request(app)
         .post('/api/auth/pin/reset')
-        .send({ recoveryKey: 'RECOVER-7K9M-3X2P-8W4Q' });
+        .send({ recoveryKey: TEST_MASTER_RECOVERY_KEY });
 
       expect(resetRes.status).toBe(200);
       expect(resetRes.body.success).toBe(true);
@@ -426,6 +440,26 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
   });
 
   describe('WebAuthn Cryptographic Endpoints & Deprecation of Insecure Endpoints', () => {
+    it('rejects credentialId alone in /api/auth/session without cryptographic proof (prevents bypass)', async () => {
+      // Register a mock WebAuthn credential in server state
+      serverWebAuthnCredentials.set('mock-webauthn-cred-1', {
+        id: 'mock-webauthn-cred-1',
+        publicKey: new Uint8Array([1, 2, 3]),
+        counter: 0,
+        userId: 'user-admin',
+        userName: 'Carlos Mendoza (Admin)',
+        createdAt: new Date().toISOString(),
+      });
+
+      // Attempt session creation by supplying only credentialId
+      const res = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-admin', credentialId: 'mock-webauthn-cred-1' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toContain('Autenticación requerida');
+    });
+
     it('has removed legacy unauthenticated /api/auth/webauthn/challenge endpoint (returns 404)', async () => {
       const res = await request(app).get('/api/auth/webauthn/challenge');
       expect(res.status).toBe(404);
@@ -456,6 +490,81 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       expect(res.status).toBe(200);
       expect(res.body.challenge).toBeDefined();
       expect(typeof res.body.challenge).toBe('string');
+    });
+
+    it('rejects authentication verification if challenge is expired or missing', async () => {
+      // Expired challenge in store
+      activeWebAuthnChallenges.set('user-admin', {
+        challenge: 'expired-challenge-123',
+        expiresAt: Date.now() - 1000, // Expired
+      });
+
+      const res = await request(app)
+        .post('/api/auth/webauthn/verify-authentication')
+        .send({
+          userId: 'user-admin',
+          response: { id: 'any-id', rawId: 'any-id', type: 'public-key', response: {} },
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.verified).toBe(false);
+      expect(res.body.error).toContain('expirado o no encontrado');
+    });
+
+    it('enforces single-use challenge consumption during verification attempt', async () => {
+      activeWebAuthnChallenges.set('user-admin', {
+        challenge: 'single-use-challenge-123',
+        expiresAt: Date.now() + 60000,
+      });
+
+      // 1st attempt with unregistered credential ID consumes the challenge
+      const res1 = await request(app)
+        .post('/api/auth/webauthn/verify-authentication')
+        .send({
+          userId: 'user-admin',
+          response: { id: 'unregistered-cred-id', rawId: 'unregistered-cred-id', type: 'public-key', response: {} },
+        });
+
+      expect(res1.status).toBe(400);
+      expect(res1.body.error).toContain('Credencial biométrica no registrada');
+
+      // 2nd attempt with same challenge fails because challenge was consumed
+      const res2 = await request(app)
+        .post('/api/auth/webauthn/verify-authentication')
+        .send({
+          userId: 'user-admin',
+          response: { id: 'unregistered-cred-id', rawId: 'unregistered-cred-id', type: 'public-key', response: {} },
+        });
+
+      expect(res2.status).toBe(400);
+      expect(res2.body.error).toContain('expirado o no encontrado');
+    });
+
+    it('rejects verification if credential belongs to a different user (user isolation)', async () => {
+      serverWebAuthnCredentials.set('cred-david', {
+        id: 'cred-david',
+        publicKey: new Uint8Array([1, 2, 3]),
+        counter: 0,
+        userId: 'user-member',
+        userName: 'David Mendoza',
+        createdAt: new Date().toISOString(),
+      });
+
+      activeWebAuthnChallenges.set('user-admin', {
+        challenge: 'valid-challenge-admin',
+        expiresAt: Date.now() + 60000,
+      });
+
+      // User admin attempts to authenticate using David's credential
+      const res = await request(app)
+        .post('/api/auth/webauthn/verify-authentication')
+        .send({
+          userId: 'user-admin',
+          response: { id: 'cred-david', rawId: 'cred-david', type: 'public-key', response: {} },
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('no pertenece al usuario solicitado');
     });
   });
 

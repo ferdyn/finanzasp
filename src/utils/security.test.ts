@@ -49,9 +49,27 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     expect(hash1).not.toBe(hash2);
   });
 
-  it('generates recovery key in valid RECOVER-XXXX-XXXX format', () => {
+  it('generates recovery key in valid RECOVER-XXXX-XXXX-XXXX-XXXX format (16 characters)', () => {
     const key = generateRecoveryKey();
-    expect(key).toMatch(/^RECOVER-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/);
+    expect(key).toMatch(/^RECOVER-[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}-[2-9A-Z]{4}$/);
+    
+    // Total character count without prefix and hyphens must be exactly 16
+    const cleanChars = key.replace(/RECOVER-|-/g, '');
+    expect(cleanChars.length).toBe(16);
+  });
+
+  it('generates high-entropy unique recovery keys with no ambiguous characters (0, 1, I, O)', () => {
+    const keys = new Set<string>();
+    const ambiguousRegex = /[01IOio]/;
+
+    for (let i = 0; i < 50; i++) {
+      const k = generateRecoveryKey();
+      const payload = k.replace('RECOVER-', '').replace(/-/g, '');
+      expect(ambiguousRegex.test(payload)).toBe(false);
+      keys.add(k);
+    }
+
+    expect(keys.size).toBe(50);
   });
 
   it('verifies valid recovery key correctly and rejects invalid ones', async () => {
@@ -59,6 +77,7 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     const key = generateRecoveryKey();
 
     const storedHash = await hashRecoveryKey(key, salt);
+    expect(storedHash.startsWith('pbkdf2_rec$')).toBe(true);
 
     // Exact key
     const isValid = await verifyRecoveryKey(key, storedHash, salt);
@@ -73,7 +92,7 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     expect(isValidNoHyphens).toBe(true);
 
     // Wrong key
-    const isInvalid = await verifyRecoveryKey('RECOVER-WRONG-KEY0', storedHash, salt);
+    const isInvalid = await verifyRecoveryKey('RECOVER-WRONG-KEY0-TEST-ABCD', storedHash, salt);
     expect(isInvalid).toBe(false);
 
     // Empty key or missing hash
@@ -81,7 +100,7 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     expect(await verifyRecoveryKey(key, null, salt)).toBe(false);
   });
 
-  it('verifies PIN and correctly flags PBKDF2 hashes vs legacy hashes', async () => {
+  it('verifies PIN and correctly flags PBKDF2 hashes vs legacy hashes and enables migration', async () => {
     const salt = generateSalt(16);
     const pin = '4826';
     const pbkdf2Hash = await hashPin(pin, salt);
@@ -93,5 +112,28 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
 
     const isWrongValid = await verifyPin('9999', pbkdf2Hash, salt);
     expect(isWrongValid).toBe(false);
+
+    // Legacy SHA-256 simulation and migration
+    const legacySalt = 'legacy-salt-123';
+    const legacyPin = '5555';
+    // Create a legacy SHA-256 hash
+    const cryptoObj = globalThis.crypto;
+    const encoder = new TextEncoder();
+    const legacyBuffer = await cryptoObj.subtle.digest(
+      'SHA-256',
+      encoder.encode(`finantrack_salt_${legacySalt}:${legacyPin}`)
+    );
+    const legacyHex = Array.from(new Uint8Array(legacyBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    // Verify against legacy hash format
+    const isLegacyValid = await verifyPin(legacyPin, legacyHex, legacySalt);
+    expect(isLegacyValid).toBe(true);
+
+    // Migration to PBKDF2
+    const migratedHash = await hashPin(legacyPin, legacySalt);
+    expect(migratedHash.startsWith('pbkdf2$')).toBe(true);
+    expect(await verifyPin(legacyPin, migratedHash, legacySalt)).toBe(true);
   });
 });
