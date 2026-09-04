@@ -110,6 +110,23 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       expect(res.body.error).toContain('Acceso denegado');
     });
 
+    it('fails safely and denies recovery when server recovery key is unconfigured (null hash)', async () => {
+      // Disable recovery key in server
+      setServerRecoveryConfig(null);
+
+      // Trigger lockout
+      for (let i = 0; i < 5; i++) {
+        await request(app).post('/api/auth/pin/attempt').send({ success: false });
+      }
+
+      const res = await request(app)
+        .post('/api/auth/pin/reset')
+        .send({ recoveryKey: TEST_MASTER_RECOVERY_KEY });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain('Acceso denegado');
+    });
+
     it('allows PIN reset ONLY with the cryptographically verified Master Recovery Key', async () => {
       // Trigger lockout
       for (let i = 0; i < 5; i++) {

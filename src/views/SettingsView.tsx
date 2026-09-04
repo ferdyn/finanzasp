@@ -1123,7 +1123,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div>
                       <h4 className="font-bold text-xs sm:text-sm text-white">Clave de Seguridad PIN</h4>
                       <p className="text-[11px] text-slate-300 mt-0.5">
-                        Almacenado de forma segura mediante hash criptográfico SHA-256 + sal.
+                        Almacenado de forma segura mediante función de derivación PBKDF2 (100.000 iteraciones) + sal criptográfica.
                       </p>
                     </div>
                   </div>

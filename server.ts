@@ -138,15 +138,19 @@ export function hashRecoveryKeySync(key: string, salt: string): string {
   return `pbkdf2_rec$${derived.toString('hex')}`;
 }
 
-const initialRecoverySalt = process.env.RECOVERY_KEY_SALT || crypto.randomBytes(16).toString('hex');
-const initialRecoveryKey = process.env.MASTER_RECOVERY_KEY || 'RECOVER-7K9M-3X2P-8W4Q-M7K2';
+const envRecoverySalt = process.env.RECOVERY_KEY_SALT || '';
+const envRecoveryKey = process.env.MASTER_RECOVERY_KEY || '';
 
-export let serverRecoveryConfig = {
-  salt: initialRecoverySalt,
-  hash: hashRecoveryKeySync(initialRecoveryKey, initialRecoverySalt),
+export let serverRecoveryConfig: { salt: string; hash: string | null } = {
+  salt: envRecoverySalt || (envRecoveryKey ? crypto.randomBytes(16).toString('hex') : ''),
+  hash: envRecoveryKey ? hashRecoveryKeySync(envRecoveryKey, envRecoverySalt || crypto.randomBytes(16).toString('hex')) : null,
 };
 
-export function setServerRecoveryConfig(key: string, salt?: string) {
+export function setServerRecoveryConfig(key: string | null, salt?: string) {
+  if (!key) {
+    serverRecoveryConfig = { salt: '', hash: null };
+    return;
+  }
   const targetSalt = salt || crypto.randomBytes(16).toString('hex');
   serverRecoveryConfig = {
     salt: targetSalt,
@@ -319,7 +323,7 @@ export function createApp(): express.Express {
 
   // --- 1. Sesiones de Usuario y RBAC ---
   app.post("/api/auth/session", (req, res) => {
-    const { userId, pin, password, credentialId } = req.body || {};
+    const { userId, pin, password } = req.body || {};
     const callerSession = extractSession(req);
     const callerPerms = callerSession ? (ROLE_PERMISSIONS[callerSession.role] || []) : [];
 
@@ -501,7 +505,7 @@ export function createApp(): express.Express {
 
     if (hasAdminSession) {
       isRecoveryAuthorized = true;
-    } else if (typeof recoveryKey === 'string' && recoveryKey.trim().length > 0) {
+    } else if (serverRecoveryConfig.hash && typeof recoveryKey === 'string' && recoveryKey.trim().length > 0) {
       try {
         const computedHash = hashRecoveryKeySync(recoveryKey, serverRecoveryConfig.salt);
         const bufA = Buffer.from(computedHash, 'utf8');

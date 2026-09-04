@@ -712,5 +712,19 @@ describe('isLiabilityAccount & Consolidated Multi-Currency Net Worth', () => {
     const revertedAccounts = applyTransactionDeletionToAccounts(appliedAccounts, tx);
     expect(revertedAccounts.find(a => a.id === 'acc-eur')?.balance).toBe(500);
     expect(revertedAccounts.find(a => a.id === 'acc-usd')?.balance).toBe(1000);
+
+    // Test applyTransactionUpdateToAccounts: Editing amount from 100 EUR to 200 EUR
+    const updatedTx: Transaction = {
+      ...tx,
+      amount: 200, // 200 EUR transferred out -> 200 * 1.08 = 216 USD incoming
+    };
+    const editedAccounts = applyTransactionUpdateToAccounts(appliedAccounts, tx, updatedTx);
+    expect(editedAccounts.find(a => a.id === 'acc-eur')?.balance).toBe(300); // 500 - 200
+    expect(editedAccounts.find(a => a.id === 'acc-usd')?.balance).toBe(1216); // 1000 + 216
+
+    // Reverting the edited transaction back to initial state leaves zero residual drift
+    const cleanReverted = applyTransactionDeletionToAccounts(editedAccounts, updatedTx);
+    expect(cleanReverted.find(a => a.id === 'acc-eur')?.balance).toBe(500);
+    expect(cleanReverted.find(a => a.id === 'acc-usd')?.balance).toBe(1000);
   });
 });

@@ -105,7 +105,9 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     const pin = '4826';
     const pbkdf2Hash = await hashPin(pin, salt);
 
+    // New credentials strictly generate pbkdf2$ prefix and never plain SHA-256
     expect(pbkdf2Hash.startsWith('pbkdf2$')).toBe(true);
+    expect(pbkdf2Hash).not.toMatch(/^[a-f0-9]{64}$/); // Not raw hex SHA-256
 
     const isValid = await verifyPin(pin, pbkdf2Hash, salt);
     expect(isValid).toBe(true);
@@ -131,9 +133,47 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     const isLegacyValid = await verifyPin(legacyPin, legacyHex, legacySalt);
     expect(isLegacyValid).toBe(true);
 
-    // Migration to PBKDF2
+    // Rejection of invalid pin against legacy hash (no bypass)
+    const isInvalidLegacy = await verifyPin('0000', legacyHex, legacySalt);
+    expect(isInvalidLegacy).toBe(false);
+
+    // Migration to modern PBKDF2: Once migrated, modern hash replaces legacy entirely
     const migratedHash = await hashPin(legacyPin, legacySalt);
     expect(migratedHash.startsWith('pbkdf2$')).toBe(true);
     expect(await verifyPin(legacyPin, migratedHash, legacySalt)).toBe(true);
+
+    // Post-migration: The stored state is now pbkdf2$, legacy string is discarded
+    expect(migratedHash).not.toBe(legacyHex);
+  });
+
+  it('guarantees new recovery key hashing strictly uses pbkdf2_rec$ and never plain SHA-256', async () => {
+    const salt = generateSalt(16);
+    const key = generateRecoveryKey();
+    const newHash = await hashRecoveryKey(key, salt);
+
+    expect(newHash.startsWith('pbkdf2_rec$')).toBe(true);
+    expect(newHash).not.toMatch(/^[a-f0-9]{64}$/);
+
+    // Legacy recovery key simulation and migration
+    const legacySalt = 'rec-salt-legacy';
+    const normalized = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cryptoObj = globalThis.crypto;
+    const encoder = new TextEncoder();
+    const legacyBuffer = await cryptoObj.subtle.digest(
+      'SHA-256',
+      encoder.encode(`finantrack_recovery_${legacySalt}:${normalized}`)
+    );
+    const legacyHex = Array.from(new Uint8Array(legacyBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    expect(await verifyRecoveryKey(key, legacyHex, legacySalt)).toBe(true);
+    expect(await verifyRecoveryKey('RECOVER-WRONG-AAAA-BBBB', legacyHex, legacySalt)).toBe(false);
+
+    // Post-migration: Stored state migrates to pbkdf2_rec$
+    const modernHash = await hashRecoveryKey(key, legacySalt);
+    expect(modernHash.startsWith('pbkdf2_rec$')).toBe(true);
+    expect(await verifyRecoveryKey(key, modernHash, legacySalt)).toBe(true);
+    expect(modernHash).not.toBe(legacyHex);
   });
 });
