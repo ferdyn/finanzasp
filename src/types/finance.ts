@@ -38,7 +38,7 @@ export interface Account {
   accountNumber?: string;
   isHidden?: boolean;
   creditLimit?: number; // Para tarjetas de crédito
-  initialBalance?: number; // Saldo de apertura contable para reconstrucción y auditoría del Libro Mayor
+  initialBalance: number; // Saldo de apertura contable: fuente única de verdad para el Libro Mayor
 }
 
 export interface Transaction {
@@ -84,6 +84,7 @@ export interface SavingsGoal {
   icon: string;
   category?: string;
   notes?: string;
+  linkedAccountId?: string;
 }
 
 export type RecurringFrequency = 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual' | 'yearly';

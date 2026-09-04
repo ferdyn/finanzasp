@@ -3,7 +3,7 @@ import { useFinance } from '../context/FinanceContext';
 import { useUser } from '../context/UserContext';
 import { formatMoney } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
-import { Account, AccountType } from '../types/finance';
+import { Account, AccountType, CurrencyCode } from '../types/finance';
 import { isLiabilityAccount, calculateNetWorthByCurrency } from '../utils/financialCalculations';
 import { DigitalCardsSection } from '../components/DigitalCardsSection';
 import { 
@@ -197,11 +197,11 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                     <span className="text-[11px] text-slate-500 dark:text-slate-400">{curData.accountCount} {curData.accountCount === 1 ? 'cuenta' : 'cuentas'}</span>
                   </div>
                   <div className="text-base font-bold text-slate-900 dark:text-white font-mono-num">
-                    {formatMoney(curData.totalNetWorth, c as any)}
+                    {formatMoney(curData.totalNetWorth, c as CurrencyCode)}
                   </div>
                   <div className="text-[11px] flex justify-between mt-1 pt-1 border-t border-slate-200/60 dark:border-slate-700/40">
-                    <span className="text-emerald-600 dark:text-emerald-400 font-mono-num font-medium">+{formatMoney(curData.totalAssets, c as any)}</span>
-                    <span className="text-rose-600 dark:text-rose-400 font-mono-num font-medium">-{formatMoney(curData.totalLiabilities, c as any)}</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-mono-num font-medium">+{formatMoney(curData.totalAssets, c as CurrencyCode)}</span>
+                    <span className="text-rose-600 dark:text-rose-400 font-mono-num font-medium">-{formatMoney(curData.totalLiabilities, c as CurrencyCode)}</span>
                   </div>
                 </div>
               );
@@ -330,7 +330,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
 
                 <div className="flex items-center gap-3">
                   <span className="text-base font-bold text-slate-900 dark:text-white font-mono-num">
-                    {formatMoney(acc.balance, (acc.currency as any) || currency)}
+                    {formatMoney(acc.balance, (acc.currency as CurrencyCode) || currency)}
                   </span>
                   {canEditAccounts && (
                     <button
@@ -387,14 +387,14 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-400">
-                        {acc.creditLimit ? `Límite: ${formatMoney(acc.creditLimit, (acc.currency as any) || currency)}` : typeLabels[acc.type]}
+                        {acc.creditLimit ? `Límite: ${formatMoney(acc.creditLimit, (acc.currency as CurrencyCode) || currency)}` : typeLabels[acc.type]}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
                     <span className="text-base font-bold text-red-600 dark:text-red-400 font-mono-num">
-                      -{formatMoney(Math.abs(acc.balance), (acc.currency as any) || currency)}
+                      -{formatMoney(Math.abs(acc.balance), (acc.currency as CurrencyCode) || currency)}
                     </span>
                     {canEditAccounts && (
                       <button

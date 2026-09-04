@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import { User, UserRole, UserPermissions, DEFAULT_ROLE_PERMISSIONS, ROLE_DEFINITIONS } from '../types/user';
 import { AuditLogEntry, AuditCategory, AuditSeverity, AuditActionType } from '../types/audit';
 import { INITIAL_USERS, INITIAL_AUDIT_LOGS } from '../data/seedUsers';
+import { generateSecureId } from '../utils/security';
 
 interface UserContextType {
   users: User[];
@@ -179,7 +180,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }) => {
     const actor = entry.customUser || currentUser;
     const newEntry: AuditLogEntry = {
-      id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: generateSecureId('log', 4),
       timestamp: new Date().toISOString(),
       userId: actor.id,
       userName: actor.name,

@@ -40,6 +40,7 @@ import {
   Share2
 } from 'lucide-react';
 import { Transaction } from '../types/finance';
+import { generateSecureRandomNumber } from '../utils/security';
 
 interface SavedReportItem {
   id: string;
@@ -299,7 +300,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ onBack }) => {
     hour: '2-digit', 
     minute: '2-digit' 
   });
-  const reportId = `REP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const reportId = `REP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${generateSecureRandomNumber(1000, 9999)}`;
 
   const [downloadSuccessToast, setDownloadSuccessToast] = useState<string | null>(null);
 

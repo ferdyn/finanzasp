@@ -701,7 +701,8 @@ export const ManualView: React.FC<ManualViewProps> = ({
                         {perm.label}
                       </td>
                       {Object.keys(ROLE_DEFINITIONS).map((roleKey) => {
-                        const hasPerm = (rolePermissions[roleKey as UserRole] as any)?.[perm.key];
+                        const rolePerms = rolePermissions[roleKey as UserRole];
+                        const hasPerm = rolePerms ? Boolean(rolePerms[perm.key as keyof typeof rolePerms]) : false;
                         const isCurrent = currentUser.role === roleKey;
                         return (
                           <td 

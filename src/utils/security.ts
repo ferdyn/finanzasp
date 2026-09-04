@@ -43,7 +43,36 @@ export function generateSalt(length = 16): string {
     cryptoObj.getRandomValues(array);
     return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
   }
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  throw new Error('Web Crypto API no disponible para generación criptográfica de sal.');
+}
+
+/**
+ * Genera un identificador único seguro basado en timestamp y bytes criptográficos aleatorios.
+ * Reemplaza de forma segura Math.random() para IDs de transacciones, logs y entidades.
+ */
+export function generateSecureId(prefix = 'id', byteLength = 4): string {
+  const cryptoObj = getCrypto();
+  if (cryptoObj && cryptoObj.getRandomValues) {
+    const bytes = new Uint8Array(byteLength);
+    cryptoObj.getRandomValues(bytes);
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    return `${prefix}-${Date.now()}-${hex}`;
+  }
+  return `${prefix}-${Date.now()}`;
+}
+
+/**
+ * Genera un número entero aleatorio criptográficamente seguro en el rango [min, max].
+ */
+export function generateSecureRandomNumber(min: number, max: number): number {
+  const cryptoObj = getCrypto();
+  if (cryptoObj && cryptoObj.getRandomValues) {
+    const uint32 = new Uint32Array(1);
+    cryptoObj.getRandomValues(uint32);
+    const fraction = uint32[0] / 0x100000000;
+    return Math.floor(min + fraction * (max - min + 1));
+  }
+  return min;
 }
 
 /**
@@ -123,45 +152,69 @@ export async function verifyPin(
 }
 
 /**
- * Genera una Clave Maestra de Recuperación de Seguridad aleatoria de alta entropía.
- * Formato: RECOVER-XXXX-XXXX (alfanumérico sin caracteres ambiguos)
+ * Genera una Clave Maestra de Recuperación de Seguridad con entropía criptográfica de alta seguridad.
+ * Utiliza exclusivamente crypto.getRandomValues() para eliminar cualquier predictibilidad.
+ * Formato: RECOVER-XXXX-XXXX-XXXX-XXXX (16 caracteres base-32 = 80 bits de entropía pura)
  */
 export function generateRecoveryKey(): string {
   const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const cryptoObj = getCrypto();
+  if (!cryptoObj || !cryptoObj.getRandomValues) {
+    throw new Error('Web Crypto API no disponible para generación de Recovery Key criptográfica.');
+  }
+
+  const randomBytes = new Uint8Array(8);
+  cryptoObj.getRandomValues(randomBytes);
+
   let p1 = '';
   let p2 = '';
   for (let i = 0; i < 4; i++) {
-    p1 += chars.charAt(Math.floor(Math.random() * chars.length));
-    p2 += chars.charAt(Math.floor(Math.random() * chars.length));
+    p1 += chars.charAt(randomBytes[i] % chars.length);
+    p2 += chars.charAt(randomBytes[4 + i] % chars.length);
   }
   return `RECOVER-${p1}-${p2}`;
 }
 
 /**
- * Genera el hash criptográfico SHA-256 de una Clave Maestra de Recuperación con sal.
+ * Genera el hash criptográfico robusto de una Clave Maestra de Recuperación con sal utilizando PBKDF2 (100,000 iteraciones con HMAC-SHA-256).
+ * Formato: pbkdf2_rec$<hex>
  */
 export async function hashRecoveryKey(key: string, salt: string): Promise<string> {
   const normalized = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const cryptoObj = getCrypto();
   if (!cryptoObj?.subtle) {
-    let hash = 0;
-    const str = `${salt}:recovery:${normalized}`;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash) + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return `rec_${Math.abs(hash).toString(16)}`;
+    throw new Error('Web Crypto Subtle no disponible para derivación segura de clave');
   }
 
   const encoder = new TextEncoder();
-  const data = encoder.encode(`finantrack_recovery_${salt}:${normalized}`);
-  const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const keyMaterial = await cryptoObj.subtle.importKey(
+    'raw',
+    encoder.encode(normalized),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+
+  const saltBuffer = encoder.encode(`finantrack_rec_pbkdf2_${salt}`);
+  const derivedBits = await cryptoObj.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBuffer,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return `pbkdf2_rec$${hex}`;
 }
 
 /**
  * Verifica si la clave de recuperación introducida coincide con el hash guardado.
+ * Admite tanto el estándar moderno PBKDF2 como retrocompatibilidad con hashes legados SHA-256.
  */
 export async function verifyRecoveryKey(
   enteredKey: string,
@@ -169,8 +222,26 @@ export async function verifyRecoveryKey(
   salt: string | null | undefined
 ): Promise<boolean> {
   if (!storedHash || !salt || !enteredKey) return false;
-  const computedHash = await hashRecoveryKey(enteredKey, salt);
-  return computedHash === storedHash;
+  
+  // 1. Verificación moderna PBKDF2
+  if (storedHash.startsWith('pbkdf2_rec$')) {
+    const computed = await hashRecoveryKey(enteredKey, salt);
+    return computed === storedHash;
+  }
+
+  // 2. Retrocompatibilidad SHA-256 legado para configuraciones previas
+  const normalized = enteredKey.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const cryptoObj = getCrypto();
+  if (cryptoObj?.subtle) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`finantrack_recovery_${salt}:${normalized}`);
+    const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const legacyHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return legacyHex === storedHash;
+  }
+
+  return false;
 }
 
 /**

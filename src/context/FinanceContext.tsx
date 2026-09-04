@@ -12,6 +12,7 @@ import {
   auditAccountIntegrity,
   canDeleteAccount,
 } from '../utils/financialCalculations';
+import { generateSecureId } from '../utils/security';
 import { useUser } from './UserContext';
 
 interface FinanceContextType {
@@ -494,7 +495,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const newTx: Transaction = {
       ...data,
-      id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: generateSecureId('tx', 4),
       createdByUserId: data.createdByUserId || currentUser?.id,
       createdByName: data.createdByName || currentUser?.name,
     };
@@ -931,7 +932,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     if (fromAccountId) {
-      const destinationAcc = (targetGoal as any)?.linkedAccountId;
+      const destinationAcc = targetGoal?.linkedAccountId;
       addTransaction({
         amount,
         type: destinationAcc ? 'transfer' : 'expense',

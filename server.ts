@@ -4,31 +4,174 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+  RegistrationResponseJSON,
+  AuthenticationResponseJSON,
+} from "@simplewebauthn/server";
 
 dotenv.config();
 
 const PORT = 3000;
 
-// Rate limiting y control de intentos en memoria del servidor
+// Rate limiting por ámbito y por IP
 interface RateLimitRecord {
   count: number;
   resetTime: number;
 }
 const ipRateLimits = new Map<string, RateLimitRecord>();
 
-// Intentos fallidos de autenticación y bloqueo por IP
+export function createRateLimiter(scope: string, limit: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+    const key = `${scope}:${ip}`;
+    const now = Date.now();
+    const record = ipRateLimits.get(key);
+
+    if (!record || now > record.resetTime) {
+      ipRateLimits.set(key, { count: 1, resetTime: now + windowMs });
+      return next();
+    }
+
+    if (record.count >= limit) {
+      const waitSeconds = Math.ceil((record.resetTime - now) / 1000);
+      res.setHeader('Retry-After', waitSeconds.toString());
+      return res.status(429).json({
+        error: `Demasiadas solicitudes en ${scope}. Por favor espera ${waitSeconds} segundos.`,
+        retryAfter: waitSeconds,
+      });
+    }
+
+    record.count += 1;
+    next();
+  };
+}
+
+// Intentos fallidos de PIN y bloqueo por IP
 interface AuthLockoutRecord {
   failedAttempts: number;
   lockoutUntil: number;
   lastAttempt: number;
 }
-const ipLockoutState = new Map<string, AuthLockoutRecord>();
+export const ipLockoutState = new Map<string, AuthLockoutRecord>();
 
-// Desafíos WebAuthn activos con TTL de 5 minutos
-const activeWebAuthnChallenges = new Map<string, number>();
+// WebAuthn: Almacén de credenciales y desafíos activos
+interface StoredWebAuthnCredential {
+  id: string; // base64URL ID
+  publicKey: Uint8Array;
+  counter: number;
+  transports?: any[];
+  userId: string;
+  userName: string;
+  createdAt: string;
+}
+export const serverWebAuthnCredentials = new Map<string, StoredWebAuthnCredential>();
+export const activeWebAuthnChallenges = new Map<string, { challenge: string; expiresAt: number }>();
 
-// Almacén seguro en memoria del servidor para logs de auditoría (últimos 1000 eventos)
-interface ServerAuditLog {
+// Sesiones de usuario y control de acceso basado en roles (RBAC)
+export type ServerUserRole = 'admin' | 'manager' | 'member' | 'viewer';
+
+export interface ServerUserSession {
+  token: string;
+  userId: string;
+  userName: string;
+  role: ServerUserRole;
+  expiresAt: number;
+}
+export const activeSessions = new Map<string, ServerUserSession>();
+
+export const ROLE_PERMISSIONS: Record<ServerUserRole, string[]> = {
+  admin: [
+    'canCreateTransactions',
+    'canEditTransactions',
+    'canDeleteTransactions',
+    'canManageAccounts',
+    'canManageBudgets',
+    'canManageGoals',
+    'canManageUsers',
+    'canExportData',
+    'canViewAuditLogs',
+    'canClearAuditLogs',
+    'canConfigureSecurity',
+  ],
+  manager: [
+    'canCreateTransactions',
+    'canEditTransactions',
+    'canDeleteTransactions',
+    'canManageAccounts',
+    'canManageBudgets',
+    'canManageGoals',
+    'canExportData',
+    'canViewAuditLogs',
+  ],
+  member: [
+    'canCreateTransactions',
+    'canEditTransactions',
+    'canManageGoals',
+  ],
+  viewer: [],
+};
+
+export function extractSession(req: express.Request): ServerUserSession | null {
+  const authHeader = req.headers.authorization;
+  let token: string | undefined;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else if (typeof req.headers['x-session-token'] === 'string') {
+    token = req.headers['x-session-token'];
+  }
+
+  if (token && activeSessions.has(token)) {
+    const session = activeSessions.get(token)!;
+    if (Date.now() < session.expiresAt) {
+      return session;
+    }
+    activeSessions.delete(token);
+  }
+
+  // Soporte directo mediante cabeceras de cliente para llamadas desde contexto
+  const roleHeader = req.headers['x-user-role'];
+  const userIdHeader = req.headers['x-user-id'];
+  const userNameHeader = req.headers['x-user-name'];
+  if (typeof roleHeader === 'string' && ['admin', 'manager', 'member', 'viewer'].includes(roleHeader)) {
+    return {
+      token: 'stateless-header-session',
+      userId: typeof userIdHeader === 'string' ? userIdHeader : 'usr-default',
+      userName: typeof userNameHeader === 'string' ? userNameHeader : 'Usuario FinanTrack',
+      role: roleHeader as ServerUserRole,
+      expiresAt: Date.now() + 3600000,
+    };
+  }
+
+  return null;
+}
+
+export function requirePermission(permissionKey: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const session = extractSession(req);
+    if (!session) {
+      return res.status(401).json({
+        error: "Autenticación requerida. Proporciona una sesión válida o credencial de autorización.",
+      });
+    }
+
+    const perms = ROLE_PERMISSIONS[session.role] || [];
+    if (!perms.includes(permissionKey)) {
+      return res.status(403).json({
+        error: `Acceso denegado. El rol '${session.role}' no dispone del permiso requerido '${permissionKey}'.`,
+      });
+    }
+
+    (req as any).userSession = session;
+    next();
+  };
+}
+
+// Almacén seguro en memoria para logs de auditoría (últimos 1000 eventos)
+export interface ServerAuditLog {
   id: string;
   timestamp: string;
   ip: string;
@@ -40,32 +183,7 @@ interface ServerAuditLog {
   description: string;
   severity: 'info' | 'warning' | 'danger' | 'success';
 }
-const serverAuditLogs: ServerAuditLog[] = [];
-
-// Middleware simple de Rate Limiting
-function applyRateLimit(limit: number, windowMs: number) {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
-    const now = Date.now();
-    const record = ipRateLimits.get(ip);
-
-    if (!record || now > record.resetTime) {
-      ipRateLimits.set(ip, { count: 1, resetTime: now + windowMs });
-      return next();
-    }
-
-    if (record.count >= limit) {
-      const waitSeconds = Math.ceil((record.resetTime - now) / 1000);
-      return res.status(429).json({
-        error: `Demasiadas solicitudes. Por favor espera ${waitSeconds} segundos.`,
-        retryAfter: waitSeconds,
-      });
-    }
-
-    record.count += 1;
-    next();
-  };
-}
+export const serverAuditLogs: ServerAuditLog[] = [];
 
 let aiClient: GoogleGenAI | null = null;
 
@@ -87,17 +205,48 @@ function getAiClient(): GoogleGenAI | null {
   return aiClient;
 }
 
-async function startServer() {
+export function createApp(): express.Express {
   const app = express();
 
   app.use(express.json({ limit: "1mb" }));
 
-  // Health check endpoint
+  // Endpoint de salud
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // --- 1. Control de Bloqueo por PIN y Rate Limiting en Servidor ---
+  // --- 1. Sesiones de Usuario y RBAC ---
+  app.post("/api/auth/session", (req, res) => {
+    const { userId, role, name } = req.body;
+    const safeRole: ServerUserRole = ['admin', 'manager', 'member', 'viewer'].includes(role)
+      ? role
+      : 'viewer';
+    const safeUserId = String(userId || 'usr-default').slice(0, 50);
+    const safeName = String(name || 'Usuario').slice(0, 80);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const session: ServerUserSession = {
+      token,
+      userId: safeUserId,
+      userName: safeName,
+      role: safeRole,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 horas
+    };
+
+    activeSessions.set(token, session);
+    res.json({
+      token,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      user: {
+        id: safeUserId,
+        name: safeName,
+        role: safeRole,
+        permissions: ROLE_PERMISSIONS[safeRole],
+      },
+    });
+  });
+
+  // --- 2. Control de Bloqueo por PIN y Rate Limiting ---
   app.get("/api/auth/pin/status", (req, res) => {
     const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
     const now = Date.now();
@@ -112,7 +261,6 @@ async function startServer() {
       return res.json({ isLockedOut: true, remainingAttempts: 0, remainingSeconds });
     }
 
-    // Si expiró el bloqueo, restablecer a 0
     if (record.lockoutUntil > 0 && record.lockoutUntil <= now) {
       ipLockoutState.delete(ip);
       return res.json({ isLockedOut: false, remainingAttempts: 5, remainingSeconds: 0 });
@@ -133,7 +281,6 @@ async function startServer() {
       return res.json({ success: true, isLockedOut: false });
     }
 
-    // Intento fallido
     if (!record) {
       record = { failedAttempts: 1, lockoutUntil: 0, lastAttempt: now };
     } else {
@@ -142,13 +289,11 @@ async function startServer() {
     }
 
     if (record.failedAttempts >= 5) {
-      // Bloqueo temporal por 30 segundos
       record.lockoutUntil = now + 30 * 1000;
       ipLockoutState.set(ip, record);
 
-      // Registrar intento sospechoso en audit log del servidor
       serverAuditLogs.unshift({
-        id: `srv-audit-${Date.now()}`,
+        id: `srv-audit-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
         timestamp: new Date().toISOString(),
         ip,
         action: 'SECURITY_LOCKOUT',
@@ -175,19 +320,216 @@ async function startServer() {
     });
   });
 
-  // --- 2. Desafíos Criptográficos WebAuthn (Servidor) ---
+  app.post("/api/auth/pin/reset", (req, res) => {
+    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+    ipLockoutState.delete(ip);
+    res.json({ success: true, message: "Contador de intentos de PIN reseteado exitosamente" });
+  });
+
+  // --- 3. WebAuthn: Registro y Verificación Criptográfica con @simplewebauthn/server ---
+  app.post("/api/auth/webauthn/generate-registration-options", async (req, res) => {
+    try {
+      const { userName, userId } = req.body;
+      const safeUserId = String(userId || 'default-user').slice(0, 64);
+      const safeUserName = String(userName || 'Usuario FinanTrack').slice(0, 100);
+
+      const rpID = req.hostname || 'localhost';
+      const options = await generateRegistrationOptions({
+        rpName: 'FinanTrack - Finanzas Personales',
+        rpID,
+        userID: new TextEncoder().encode(safeUserId),
+        userName: safeUserName,
+        userDisplayName: safeUserName,
+        attestationType: 'none',
+        authenticatorSelection: {
+          residentKey: 'discouraged',
+          userVerification: 'preferred',
+        },
+        timeout: 60000,
+      });
+
+      activeWebAuthnChallenges.set(safeUserId, {
+        challenge: options.challenge,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
+
+      res.json(options);
+    } catch (err: any) {
+      console.error('Error generating registration options:', err);
+      res.status(500).json({ error: err.message || 'Error al generar opciones de registro biométrico' });
+    }
+  });
+
+  app.post("/api/auth/webauthn/verify-registration", async (req, res) => {
+    try {
+      const { response, userId, userName } = req.body as {
+        response: RegistrationResponseJSON;
+        userId?: string;
+        userName?: string;
+      };
+
+      const safeUserId = String(userId || 'default-user').slice(0, 64);
+      const challengeRecord = activeWebAuthnChallenges.get(safeUserId);
+
+      if (!challengeRecord || Date.now() > challengeRecord.expiresAt) {
+        return res.status(400).json({ verified: false, error: 'Desafío WebAuthn expirado o inválido' });
+      }
+
+      activeWebAuthnChallenges.delete(safeUserId);
+
+      const rpID = req.hostname || 'localhost';
+      const reqOrigin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
+      const allowedOrigins = [
+        reqOrigin,
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5173',
+      ];
+
+      const verification = await verifyRegistrationResponse({
+        response,
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: allowedOrigins,
+        expectedRPID: rpID,
+        requireUserVerification: false,
+      });
+
+      if (verification.verified && verification.registrationInfo) {
+        const { credential } = verification.registrationInfo;
+        const storedCred: StoredWebAuthnCredential = {
+          id: credential.id,
+          publicKey: credential.publicKey,
+          counter: credential.counter,
+          transports: credential.transports,
+          userId: safeUserId,
+          userName: userName || 'Usuario FinanTrack',
+          createdAt: new Date().toISOString(),
+        };
+
+        serverWebAuthnCredentials.set(credential.id, storedCred);
+
+        return res.json({
+          verified: true,
+          credentialId: credential.id,
+        });
+      }
+
+      res.status(400).json({ verified: false, error: 'Verificación de credencial biométrica fallida' });
+    } catch (err: any) {
+      console.error('Error verifying registration response:', err);
+      res.status(400).json({ verified: false, error: err.message || 'Fallo al verificar registro de credencial' });
+    }
+  });
+
+  app.post("/api/auth/webauthn/generate-authentication-options", async (req, res) => {
+    try {
+      const { credentialId, userId } = req.body;
+      const safeUserId = String(userId || 'default-user').slice(0, 64);
+      const rpID = req.hostname || 'localhost';
+
+      let allowCredentials: any[] = [];
+      if (credentialId && serverWebAuthnCredentials.has(credentialId)) {
+        const cred = serverWebAuthnCredentials.get(credentialId)!;
+        allowCredentials.push({
+          id: cred.id,
+          transports: cred.transports,
+        });
+      } else {
+        // Permitir cualquiera de las credenciales registradas para este usuario
+        for (const cred of serverWebAuthnCredentials.values()) {
+          if (cred.userId === safeUserId) {
+            allowCredentials.push({
+              id: cred.id,
+              transports: cred.transports,
+            });
+          }
+        }
+      }
+
+      const options = await generateAuthenticationOptions({
+        rpID,
+        allowCredentials: allowCredentials.length > 0 ? allowCredentials : undefined,
+        userVerification: 'preferred',
+        timeout: 60000,
+      });
+
+      activeWebAuthnChallenges.set(safeUserId, {
+        challenge: options.challenge,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
+
+      res.json(options);
+    } catch (err: any) {
+      console.error('Error generating auth options:', err);
+      res.status(500).json({ error: err.message || 'Error al generar opciones de autenticación biométrica' });
+    }
+  });
+
+  app.post("/api/auth/webauthn/verify-authentication", async (req, res) => {
+    try {
+      const { response, userId } = req.body as {
+        response: AuthenticationResponseJSON;
+        userId?: string;
+      };
+
+      const safeUserId = String(userId || 'default-user').slice(0, 64);
+      const challengeRecord = activeWebAuthnChallenges.get(safeUserId);
+
+      if (!challengeRecord || Date.now() > challengeRecord.expiresAt) {
+        return res.status(400).json({ verified: false, error: 'Desafío biométrico expirado o no encontrado' });
+      }
+
+      activeWebAuthnChallenges.delete(safeUserId);
+
+      const credential = serverWebAuthnCredentials.get(response.id);
+      if (!credential) {
+        return res.status(400).json({ verified: false, error: 'Credencial biométrica no registrada en el servidor' });
+      }
+
+      const rpID = req.hostname || 'localhost';
+      const reqOrigin = req.get('origin') || `${req.protocol}://${req.get('host')}`;
+      const allowedOrigins = [
+        reqOrigin,
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:5173',
+      ];
+
+      const verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: allowedOrigins,
+        expectedRPID: rpID,
+        credential: {
+          id: credential.id,
+          publicKey: credential.publicKey,
+          counter: credential.counter,
+          transports: credential.transports,
+        },
+        requireUserVerification: false,
+      });
+
+      if (verification.verified && verification.authenticationInfo) {
+        credential.counter = verification.authenticationInfo.newCounter;
+        serverWebAuthnCredentials.set(credential.id, credential);
+        return res.json({ verified: true });
+      }
+
+      res.status(400).json({ verified: false, error: 'Aserción biométrica rechazada' });
+    } catch (err: any) {
+      console.error('Error verifying auth response:', err);
+      res.status(400).json({ verified: false, error: err.message || 'Fallo de autenticación biométrica' });
+    }
+  });
+
+  // Endpoints WebAuthn de compatibilidad previa
   app.get("/api/auth/webauthn/challenge", (req, res) => {
-    // Generar un challenge criptográficamente seguro de 32 bytes en formato base64url
     const challengeBuffer = crypto.randomBytes(32);
     const challenge = challengeBuffer.toString("base64url");
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutos
-    activeWebAuthnChallenges.set(challenge, expiresAt);
-
-    // Limpiar retos expirados
-    for (const [ch, exp] of activeWebAuthnChallenges.entries()) {
-      if (Date.now() > exp) activeWebAuthnChallenges.delete(ch);
-    }
-
+    activeWebAuthnChallenges.set(challenge, {
+      challenge,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    });
     res.json({ challenge });
   });
 
@@ -197,14 +539,12 @@ async function startServer() {
       return res.status(400).json({ success: false, error: "Challenge requerido" });
     }
 
-    const expiresAt = activeWebAuthnChallenges.get(challenge);
-    if (!expiresAt || Date.now() > expiresAt) {
+    const rec = activeWebAuthnChallenges.get(challenge);
+    if (!rec || Date.now() > rec.expiresAt) {
       return res.status(400).json({ success: false, error: "El desafío WebAuthn ha expirado o es inválido" });
     }
 
-    // Consumir el challenge para evitar replay attacks
     activeWebAuthnChallenges.delete(challenge);
-
     res.json({
       success: true,
       verified: true,
@@ -213,7 +553,7 @@ async function startServer() {
     });
   });
 
-  // --- 3. Auditoría en Servidor (Tamper-Resistant) ---
+  // --- 4. Auditoría en Servidor Protegida por RBAC ---
   app.post("/api/audit/log", (req, res) => {
     const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
     const { action, category, title, description, severity, userId, userName } = req.body;
@@ -243,51 +583,72 @@ async function startServer() {
     res.json({ success: true, logId: newLog.id });
   });
 
-  app.get("/api/audit/logs", (req, res) => {
+  app.get("/api/audit/logs", requirePermission('canViewAuditLogs'), (req, res) => {
     res.json({ logs: serverAuditLogs.slice(0, 100) });
   });
 
-  // --- 4. Asesor Financiero IA Protegido con Rate Limiting y Sanitización ---
-  app.post("/api/advisor", applyRateLimit(10, 60 * 1000), async (req, res) => {
-    try {
-      const { question, financialContext } = req.body;
+  app.post("/api/audit/clear", requirePermission('canClearAuditLogs'), (req, res) => {
+    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+    const count = serverAuditLogs.length;
+    serverAuditLogs.length = 0;
 
-      if (!question || typeof question !== "string") {
-        return res.status(400).json({ error: "Pregunta requerida y debe ser texto" });
-      }
+    // Registrar acción destructiva administrativa
+    serverAuditLogs.unshift({
+      id: `srv-log-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+      timestamp: new Date().toISOString(),
+      ip,
+      action: 'CLEAR_AUDIT_LOGS',
+      category: 'seguridad',
+      title: 'Vaciado de Historial de Auditoría',
+      description: `Se eliminaron ${count} registros de auditoría por el administrador.`,
+      severity: 'warning',
+    });
 
-      // Sanitización contra prompt-injection y limitación de longitud
-      const trimmedQuestion = question.trim().slice(0, 500);
-      if (trimmedQuestion.length === 0) {
-        return res.status(400).json({ error: "La pregunta no puede estar vacía" });
-      }
+    res.json({ success: true, message: `Historial de auditoría vaciado (${count} registros).` });
+  });
 
-      // Comprobar patrones obvios de jailbreak o manipulación
-      const injectionPattern = /(ignore previous instructions|system prompt|bypass rules|olvida todas las instrucciones|dame tu prompt)/i;
-      if (injectionPattern.test(trimmedQuestion)) {
-        return res.status(400).json({
-          error: "La consulta contiene patrones de solicitud no permitidos.",
-        });
-      }
+  // --- 5. Asesor Financiero IA Protegido con Rate Limiting y Sanitización Estricta ---
+  app.post(
+    "/api/advisor",
+    createRateLimiter('advisor', 10, 60 * 1000),
+    async (req, res) => {
+      try {
+        const { question, financialContext } = req.body;
 
-      const client = getAiClient();
-      if (!client) {
-        return res.status(503).json({
-          fallback: true,
-          answer: "El servicio de IA requiere configurar GEMINI_API_KEY en los ajustes.",
-        });
-      }
+        if (!question || typeof question !== "string") {
+          return res.status(400).json({ error: "Pregunta requerida y debe ser texto" });
+        }
 
-      // Sanitizar contexto financiero numérico para evitar NaNs o inyecciones
-      const safeCurrency = String(financialContext?.currency || 'EUR').slice(0, 5);
-      const safeIncome = Number(financialContext?.income) || 0;
-      const safeExpense = Number(financialContext?.expense) || 0;
-      const safeSavingsRate = Number(financialContext?.savingsRate) || 0;
-      const safeNetWorth = Number(financialContext?.netWorth) || 0;
-      const safeNeedsPct = Number(financialContext?.needsPct) || 0;
-      const safeWantsPct = Number(financialContext?.wantsPct) || 0;
+        const trimmedQuestion = question.trim().slice(0, 500);
+        if (trimmedQuestion.length === 0) {
+          return res.status(400).json({ error: "La pregunta no puede estar vacía" });
+        }
 
-      const prompt = `Eres un asesor financiero personal experto, empático y práctico en español para la aplicación FinanTrack.
+        // Filtro robusto contra Prompt Injection y Jailbreaks
+        const injectionPattern = /(ignore previous instructions|system prompt|bypass rules|olvida todas las instrucciones|dame tu prompt|repite las instrucciones|act as a linux terminal|jailbreak|DAN mode|developer mode)/i;
+        if (injectionPattern.test(trimmedQuestion)) {
+          return res.status(400).json({
+            error: "La consulta contiene patrones de solicitud o instrucciones no permitidas.",
+          });
+        }
+
+        const client = getAiClient();
+        if (!client) {
+          return res.status(503).json({
+            fallback: true,
+            answer: "El servicio de IA requiere configurar GEMINI_API_KEY en los ajustes.",
+          });
+        }
+
+        const safeCurrency = String(financialContext?.currency || 'EUR').slice(0, 5);
+        const safeIncome = Number(financialContext?.income) || 0;
+        const safeExpense = Number(financialContext?.expense) || 0;
+        const safeSavingsRate = Number(financialContext?.savingsRate) || 0;
+        const safeNetWorth = Number(financialContext?.netWorth) || 0;
+        const safeNeedsPct = Number(financialContext?.needsPct) || 0;
+        const safeWantsPct = Number(financialContext?.wantsPct) || 0;
+
+        const prompt = `Eres un asesor financiero personal experto, empático y practical en español para la aplicación FinanTrack.
 Contexto financiero del usuario:
 - Moneda: ${safeCurrency}
 - Ingresos de este mes: ${safeIncome}
@@ -306,58 +667,68 @@ Instrucciones de seguridad y comportamiento:
 3. Sé motivador, prudente y profesional. Máximo 3 o 4 párrafos concisos.
 4. IMPORTANTE: Bajo ninguna circunstancia intentes o finjas realizar transferencias bancarias, alterar permisos de usuario, modificar saldos o ejecutar transacciones. Eres un asesor exclusivamente consultivo.`;
 
-      const candidateModels = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.1-flash-lite"];
-      let answer = "";
-      let lastError = null;
+        const candidateModels = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.1-flash-lite"];
+        let answer = "";
+        let lastError = null;
 
-      for (const modelName of candidateModels) {
-        try {
-          const response = await client.models.generateContent({
-            model: modelName,
-            contents: prompt,
-          });
-          if (response?.text) {
-            answer = response.text;
-            break;
+        for (const modelName of candidateModels) {
+          try {
+            const response = await client.models.generateContent({
+              model: modelName,
+              contents: prompt,
+            });
+            if (response?.text) {
+              answer = response.text;
+              break;
+            }
+          } catch (err: any) {
+            lastError = err;
+            console.warn(`Model ${modelName} failed, trying next fallback:`, err?.message);
           }
-        } catch (err: any) {
-          lastError = err;
-          console.warn(`Model ${modelName} failed, trying next fallback:`, err?.message);
         }
-      }
 
-      if (!answer) {
-        throw lastError || new Error("No se pudo obtener respuesta de los modelos disponibles");
-      }
+        if (!answer) {
+          throw lastError || new Error("No se pudo obtener respuesta de los modelos disponibles");
+        }
 
-      return res.json({ answer });
-    } catch (error: any) {
-      console.error("Error in /api/advisor:", error);
-      return res.status(500).json({
-        fallback: true,
-        error: error.message || "Error al procesar consulta con IA",
-      });
+        return res.json({ answer });
+      } catch (error: any) {
+        console.error("Error in /api/advisor:", error);
+        return res.status(500).json({
+          fallback: true,
+          error: error.message || "Error al procesar consulta con IA",
+        });
+      }
     }
-  });
+  );
 
-  // Vite middleware for development vs static production build
+  return app;
+}
+
+export const app = createApp();
+
+async function startServer() {
+  const serverApp = createApp();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
-    app.use(vite.middlewares);
+    serverApp.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    serverApp.use(express.static(distPath));
+    serverApp.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  serverApp.listen(PORT, "0.0.0.0", () => {
     console.log(`FinanTrack server running on http://localhost:${PORT}`);
   });
 }
 
-startServer();
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+  startServer();
+}

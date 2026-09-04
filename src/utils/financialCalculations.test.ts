@@ -128,6 +128,7 @@ describe('calculateNetWorth', () => {
         currency: 'EUR',
         color: '#004481',
         icon: 'Landmark',
+        initialBalance: 3450.8,
       },
       {
         id: 'acc-2',
@@ -137,6 +138,7 @@ describe('calculateNetWorth', () => {
         currency: 'EUR',
         color: '#10b981',
         icon: 'PiggyBank',
+        initialBalance: 12500.0,
       },
       {
         id: 'acc-3',
@@ -146,6 +148,7 @@ describe('calculateNetWorth', () => {
         currency: 'EUR',
         color: '#f59e0b',
         icon: 'CreditCard',
+        initialBalance: -340.25,
       },
       {
         id: 'acc-4',
@@ -155,6 +158,7 @@ describe('calculateNetWorth', () => {
         currency: 'EUR',
         color: '#ef4444',
         icon: 'Receipt',
+        initialBalance: -1500.0,
       },
     ];
 
@@ -293,8 +297,8 @@ describe('calculateGoalProgress', () => {
 
 describe('validateTransfer', () => {
   const accounts: Account[] = [
-    { id: 'acc-1', name: 'A', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '' },
-    { id: 'acc-2', name: 'B', type: 'savings', balance: 1000, currency: 'EUR', color: '', icon: '' },
+    { id: 'acc-1', name: 'A', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '', initialBalance: 500 },
+    { id: 'acc-2', name: 'B', type: 'savings', balance: 1000, currency: 'EUR', color: '', icon: '', initialBalance: 1000 },
   ];
 
   it('rejects transfer with same origin and destination', () => {
@@ -316,8 +320,8 @@ describe('validateTransfer', () => {
 
 describe('Atomic Transaction Impact — Add, Edit, Delete Cycle', () => {
   const initialAccounts: Account[] = [
-    { id: 'acc-1', name: 'Main', type: 'checking', balance: 1000, currency: 'EUR', color: '', icon: '' },
-    { id: 'acc-2', name: 'Savings', type: 'savings', balance: 500, currency: 'EUR', color: '', icon: '' },
+    { id: 'acc-1', name: 'Main', type: 'checking', balance: 1000, currency: 'EUR', color: '', icon: '', initialBalance: 1000 },
+    { id: 'acc-2', name: 'Savings', type: 'savings', balance: 500, currency: 'EUR', color: '', icon: '', initialBalance: 500 },
   ];
 
   it('maintains integrity across Income Add -> Edit -> Delete cycle', () => {
@@ -379,10 +383,10 @@ describe('Atomic Transaction Impact — Add, Edit, Delete Cycle', () => {
 
 describe('Multi-Currency Handling — Distinct Currencies & Conversion', () => {
   const multiCurrencyAccounts: Account[] = [
-    { id: 'acc-eur-1', name: 'Banco Santander', type: 'checking', balance: 2500, currency: 'EUR', color: '', icon: '' },
-    { id: 'acc-usd-1', name: 'Chase Bank', type: 'savings', balance: 1500, currency: 'USD', color: '', icon: '' },
-    { id: 'acc-mxn-1', name: 'BBVA México', type: 'checking', balance: 20000, currency: 'MXN', color: '', icon: '' },
-    { id: 'acc-usd-debt', name: 'US Credit Card', type: 'credit', balance: -200, currency: 'USD', color: '', icon: '' },
+    { id: 'acc-eur-1', name: 'Banco Santander', type: 'checking', balance: 2500, currency: 'EUR', color: '', icon: '', initialBalance: 2500 },
+    { id: 'acc-usd-1', name: 'Chase Bank', type: 'savings', balance: 1500, currency: 'USD', color: '', icon: '', initialBalance: 1500 },
+    { id: 'acc-mxn-1', name: 'BBVA México', type: 'checking', balance: 20000, currency: 'MXN', color: '', icon: '', initialBalance: 20000 },
+    { id: 'acc-usd-debt', name: 'US Credit Card', type: 'credit', balance: -200, currency: 'USD', color: '', icon: '', initialBalance: -200 },
   ];
 
   it('separates net worth by currency without blind mixing (100 EUR + 100 USD != 200 EUR)', () => {
@@ -487,16 +491,16 @@ describe('canDeleteAccount — Referential Integrity Protection', () => {
 
 describe('isLiabilityAccount & Consolidated Multi-Currency Net Worth', () => {
   it('correctly classifies credit and debt accounts as liabilities regardless of negative sign', () => {
-    expect(isLiabilityAccount({ id: '1', name: '', type: 'credit', balance: 500, currency: 'EUR', color: '', icon: '' })).toBe(true);
-    expect(isLiabilityAccount({ id: '2', name: '', type: 'debt', balance: 1000, currency: 'EUR', color: '', icon: '' })).toBe(true);
-    expect(isLiabilityAccount({ id: '3', name: '', type: 'checking', balance: -50, currency: 'EUR', color: '', icon: '' })).toBe(true);
-    expect(isLiabilityAccount({ id: '4', name: '', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '' })).toBe(false);
+    expect(isLiabilityAccount({ id: '1', name: '', type: 'credit', balance: 500, currency: 'EUR', color: '', icon: '', initialBalance: 0 })).toBe(true);
+    expect(isLiabilityAccount({ id: '2', name: '', type: 'debt', balance: 1000, currency: 'EUR', color: '', icon: '', initialBalance: 0 })).toBe(true);
+    expect(isLiabilityAccount({ id: '3', name: '', type: 'checking', balance: -50, currency: 'EUR', color: '', icon: '', initialBalance: 0 })).toBe(true);
+    expect(isLiabilityAccount({ id: '4', name: '', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '', initialBalance: 0 })).toBe(false);
   });
 
   it('consolidates multi-currency net worth into target currency', () => {
     const accounts: Account[] = [
-      { id: 'a1', name: 'EUR Account', type: 'checking', balance: 100, currency: 'EUR', color: '', icon: '' },
-      { id: 'a2', name: 'USD Account', type: 'savings', balance: 108, currency: 'USD', color: '', icon: '' }, // 108 USD = 100 EUR
+      { id: 'a1', name: 'EUR Account', type: 'checking', balance: 100, currency: 'EUR', color: '', icon: '', initialBalance: 100 },
+      { id: 'a2', name: 'USD Account', type: 'savings', balance: 108, currency: 'USD', color: '', icon: '', initialBalance: 108 }, // 108 USD = 100 EUR
     ];
 
     const result = calculateNetWorth(accounts, 'EUR');
@@ -508,8 +512,8 @@ describe('isLiabilityAccount & Consolidated Multi-Currency Net Worth', () => {
 
   it('correctly handles cross-currency transfer impact', () => {
     const accounts: Account[] = [
-      { id: 'acc-eur', name: 'EUR Account', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '' },
-      { id: 'acc-usd', name: 'USD Account', type: 'savings', balance: 1000, currency: 'USD', color: '', icon: '' },
+      { id: 'acc-eur', name: 'EUR Account', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '', initialBalance: 500 },
+      { id: 'acc-usd', name: 'USD Account', type: 'savings', balance: 1000, currency: 'USD', color: '', icon: '', initialBalance: 1000 },
     ];
 
     const tx: Transaction = {

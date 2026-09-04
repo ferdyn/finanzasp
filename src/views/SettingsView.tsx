@@ -1165,17 +1165,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 pt-1">
-                  {[
-                    { id: 'launch_only', label: 'Al Iniciar', desc: 'Al abrir o recargar' },
-                    { id: 'immediate', label: 'Inmediato', desc: 'Al ocultar pestaña' },
-                    { id: '1m', label: '1 Minuto', desc: 'Tras inactividad' },
-                    { id: '5m', label: '5 Minutos', desc: 'Tras inactividad' },
-                    { id: '15m', label: '15 Minutos', desc: 'Tras inactividad' },
-                  ].map(option => (
+                  {([
+                    { id: 'launch_only' as const, label: 'Al Iniciar', desc: 'Al abrir o recargar' },
+                    { id: 'immediate' as const, label: 'Inmediato', desc: 'Al ocultar pestaña' },
+                    { id: '1m' as const, label: '1 Minuto', desc: 'Tras inactividad' },
+                    { id: '5m' as const, label: '5 Minutos', desc: 'Tras inactividad' },
+                    { id: '15m' as const, label: '15 Minutos', desc: 'Tras inactividad' },
+                  ] as const).map(option => (
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => setAutoLockTimeout(option.id as any)}
+                      onClick={() => setAutoLockTimeout(option.id)}
                       className={`p-2.5 rounded-xl border text-center transition-all ${
                         autoLockTimeout === option.id
                           ? 'bg-emerald-500 text-white border-emerald-400 shadow-sm'
@@ -1426,7 +1426,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Tipo</label>
                   <select
                     value={newBillType}
-                    onChange={(e) => setNewBillType(e.target.value as any)}
+                    onChange={(e) => setNewBillType(e.target.value as 'expense' | 'income')}
                     className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="expense">Gasto Recurrente</option>

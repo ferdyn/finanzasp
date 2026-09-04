@@ -195,22 +195,17 @@ export function validateTransfer(
 
 /**
  * Calcula el saldo exacto de una cuenta reconstruyéndolo a partir de:
- * 1. Su saldo base inicial (initialBalance, o balance inicial si no hay historial)
- * 2. Todas las transacciones registradas que afectan a esa cuenta
+ * 1. Su saldo base inicial (initialBalance, o balance inicial como apertura)
+ * 2. Todas las transacciones registradas en el Libro Mayor
  * 
- * Garantiza total consistencia contable:
- * Incomes (+), Expenses (-), Incoming Transfers (+), Outgoing Transfers (-)
+ * Regla de Fuente Única de Verdad:
+ * currentBalance = initialBalance + Sum(Incomes) - Sum(Expenses) + Sum(Transfers In) - Sum(Transfers Out)
  */
 export function calculateAccountBalance(
   account: Account,
   transactions: Transaction[]
 ): number {
-  // Saldo base de la cuenta
   const baseCents = toCents(account.initialBalance !== undefined ? account.initialBalance : account.balance);
-
-  // Si account.initialBalance está explícitamente fijado, reconstruimos el delta a partir de todas las transacciones
-  // Si no está fijado, usamos el saldo de la cuenta considerando que ya refleja las transacciones históricas
-  // Para reconstrucción determinista completa:
   let totalDeltaCents = 0;
 
   for (const tx of transactions) {
@@ -234,12 +229,7 @@ export function calculateAccountBalance(
     }
   }
 
-  if (account.initialBalance !== undefined) {
-    return fromCents(baseCents + totalDeltaCents);
-  }
-
-  // Si no hay initialBalance definido, se devuelve el balance actual
-  return account.balance;
+  return fromCents(baseCents + totalDeltaCents);
 }
 
 /**
@@ -341,7 +331,7 @@ export function calculateBudgetProgress(
   percentage: number;
   isOverBudget: boolean;
 } {
-  const limitValue = budget.monthlyLimit !== undefined ? budget.monthlyLimit : ((budget as any).limit || 0);
+  const limitValue = budget.monthlyLimit ?? 0;
   const limitCents = toCents(limitValue);
   let spentCents = 0;
 
@@ -684,18 +674,16 @@ export function auditAccountIntegrity(
   const discrepancies: AccountReconciliationDiscrepancy[] = [];
 
   for (const account of accounts) {
-    if (account.initialBalance !== undefined) {
-      const calculated = calculateAccountBalance(account, transactions);
-      const diffCents = Math.abs(toCents(account.balance) - toCents(calculated));
-      if (diffCents > 0) {
-        discrepancies.push({
-          accountId: account.id,
-          accountName: account.name,
-          currentBalance: account.balance,
-          ledgerBalance: calculated,
-          discrepancy: fromCents(toCents(account.balance) - toCents(calculated)),
-        });
-      }
+    const calculated = calculateAccountBalance(account, transactions);
+    const diffCents = Math.abs(toCents(account.balance) - toCents(calculated));
+    if (diffCents > 0) {
+      discrepancies.push({
+        accountId: account.id,
+        accountName: account.name,
+        currentBalance: account.balance,
+        ledgerBalance: calculated,
+        discrepancy: fromCents(toCents(account.balance) - toCents(calculated)),
+      });
     }
   }
 

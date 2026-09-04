@@ -50,7 +50,7 @@ export const KycVerificationModal: React.FC<KycVerificationModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<KycVerificationData>(() => {
     try {
-      const saved = localStorage.getItem('finantrack_kyc_draft');
+      const saved = sessionStorage.getItem('finantrack_kyc_draft');
       if (saved) return JSON.parse(saved);
     } catch {}
     return INITIAL_KYC_STATE;
@@ -68,7 +68,7 @@ export const KycVerificationModal: React.FC<KycVerificationModalProps> = ({
 
   const saveDraft = () => {
     try {
-      localStorage.setItem('finantrack_kyc_draft', JSON.stringify(formData));
+      sessionStorage.setItem('finantrack_kyc_draft', JSON.stringify(formData));
       setSavedDraftToast(true);
       setTimeout(() => setSavedDraftToast(false), 2500);
     } catch {}
@@ -295,7 +295,7 @@ export const KycVerificationModal: React.FC<KycVerificationModalProps> = ({
                   </label>
                   <select
                     value={formData.documentType}
-                    onChange={(e) => setFormData({ ...formData, documentType: e.target.value as any })}
+                    onChange={(e) => setFormData({ ...formData, documentType: e.target.value as KycVerificationData['documentType'] })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="dni">DNI / Documento Nacional (España)</option>
