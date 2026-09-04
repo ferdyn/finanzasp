@@ -57,9 +57,47 @@ export function divideMoney(amount: number, divisor: number): number {
 }
 
 /**
- * Calcula el impacto contable (débito/crédito) de una transacción en las cuentas involucradas.
+ * Tasas de cambio de referencia estándar relativas a EUR (Base 1.0)
+ * Proporciona una base transparente sin prometer falsa exactitud de mercado en vivo.
  */
-export function calculateTransactionImpact(transaction: Transaction): {
+export const DEFAULT_EXCHANGE_RATES: Record<string, number> = {
+  EUR: 1.0,
+  USD: 1.08,
+  MXN: 18.5,
+  COP: 4300.0,
+  ARS: 1100.0,
+  CLP: 1020.0,
+  PEN: 4.1,
+  GBP: 0.85,
+};
+
+/**
+ * Convierte un importe monetario entre dos divisas mediante tipo de cambio de referencia.
+ */
+export function convertCurrency(
+  amount: number,
+  from: string,
+  to: string,
+  rates: Record<string, number> = DEFAULT_EXCHANGE_RATES
+): number {
+  if (from === to) return amount;
+  const rateFrom = rates[from] || 1.0;
+  const rateTo = rates[to] || 1.0;
+  // Convertir from -> EUR (base 1.0) -> to
+  const amountInBaseEUR = amount / rateFrom;
+  const convertedAmount = amountInBaseEUR * rateTo;
+  return fromCents(Math.round(convertedAmount * 100));
+}
+
+/**
+ * Calcula el impacto contable (débito/crédito) de una transacción en las cuentas involucradas.
+ * Soporta transferencias multidivisa y garantiza neutralidad ante transferencias a la misma cuenta.
+ */
+export function calculateTransactionImpact(
+  transaction: Transaction,
+  accounts?: Account[],
+  exchangeRates: Record<string, number> = DEFAULT_EXCHANGE_RATES
+): {
   fromAccountId: string;
   fromDelta: number; // en valor monetario
   toAccountId?: string;
@@ -93,11 +131,21 @@ export function calculateTransactionImpact(transaction: Transaction): {
       };
     }
 
+    // Calcular monto de destino (con conversión de divisas si las cuentas difieren)
+    let destinationAmount = amount;
+    if (accounts && toAccountId) {
+      const fromAcc = accounts.find(a => a.id === transaction.accountId);
+      const toAcc = accounts.find(a => a.id === toAccountId);
+      if (fromAcc && toAcc && fromAcc.currency !== toAcc.currency) {
+        destinationAmount = convertCurrency(amount, fromAcc.currency, toAcc.currency, exchangeRates);
+      }
+    }
+
     return {
       fromAccountId: transaction.accountId,
       fromDelta: -amount,
       toAccountId: toAccountId || undefined,
-      toDelta: toAccountId ? amount : 0,
+      toDelta: toAccountId ? destinationAmount : 0,
     };
   }
 
@@ -195,27 +243,76 @@ export function calculateAccountBalance(
 }
 
 /**
- * Calcula el patrimonio neto (Net Worth), separando activos y pasivos.
- * Activos: saldos de cuentas con balance >= 0
- * Pasivos: deudas y saldos negativos de tarjetas o préstamos (balance < 0)
- * Patrimonio Neto = Activos - Pasivos
+ * Determina si una cuenta debe catalogarse como Pasivo.
+ * Una cuenta es pasivo si:
+ * 1. Su tipo es intrínsecamente pasivo ('credit' o 'debt')
+ * 2. Su saldo es negativo (sobregiro o descubierto bancario)
  */
-export function calculateNetWorth(accounts: Account[]): {
+export function isLiabilityAccount(acc: Account): boolean {
+  return acc.type === 'credit' || acc.type === 'debt' || acc.balance < 0;
+}
+
+/**
+ * Desglosa el saldo de una cuenta en componente de Activo o Pasivo de forma matemáticamente exacta.
+ */
+export function getAccountAssetLiabilityBreakdown(acc: Account): {
+  assetAmount: number;
+  liabilityAmount: number;
+} {
+  const isLiabType = acc.type === 'credit' || acc.type === 'debt';
+  if (isLiabType) {
+    return {
+      assetAmount: 0,
+      liabilityAmount: Math.abs(acc.balance),
+    };
+  }
+
+  if (acc.balance >= 0) {
+    return {
+      assetAmount: acc.balance,
+      liabilityAmount: 0,
+    };
+  } else {
+    return {
+      assetAmount: 0,
+      liabilityAmount: Math.abs(acc.balance),
+    };
+  }
+}
+
+/**
+ * Calcula el patrimonio neto (Net Worth), separando activos y pasivos.
+ * Activos: saldos de cuentas de activo con balance >= 0
+ * Pasivos: deudas, tarjetas y saldos negativos de cuentas
+ * Patrimonio Neto = Activos - Pasivos
+ * Soporta consolidación multidivisa a divisa objetivo si las cuentas manejan distintas monedas.
+ */
+export function calculateNetWorth(
+  accounts: Account[],
+  targetCurrency = 'EUR',
+  exchangeRates: Record<string, number> = DEFAULT_EXCHANGE_RATES
+): {
   totalAssets: number;
   totalLiabilities: number;
   totalNetWorth: number;
+  isMultiCurrency: boolean;
+  currenciesPresent: string[];
 } {
   let assetsCents = 0;
   let liabilitiesCents = 0;
+  const currenciesSet = new Set<string>();
 
   for (const acc of accounts) {
-    // Si la cuenta está oculta, no se excluye salvo que así se configure expresamente
-    const balCents = toCents(acc.balance);
-    if (balCents >= 0) {
-      assetsCents += balCents;
-    } else {
-      liabilitiesCents += Math.abs(balCents);
-    }
+    const cur = acc.currency || 'EUR';
+    currenciesSet.add(cur);
+
+    const breakdown = getAccountAssetLiabilityBreakdown(acc);
+    // Convertir montos a la divisa de consolidación
+    const convertedAsset = convertCurrency(breakdown.assetAmount, cur, targetCurrency, exchangeRates);
+    const convertedLiability = convertCurrency(breakdown.liabilityAmount, cur, targetCurrency, exchangeRates);
+
+    assetsCents += toCents(convertedAsset);
+    liabilitiesCents += toCents(convertedLiability);
   }
 
   const totalAssets = fromCents(assetsCents);
@@ -226,6 +323,8 @@ export function calculateNetWorth(accounts: Account[]): {
     totalAssets,
     totalLiabilities,
     totalNetWorth,
+    isMultiCurrency: currenciesSet.size > 1,
+    currenciesPresent: Array.from(currenciesSet),
   };
 }
 
@@ -479,41 +578,9 @@ export function applyTransactionDeletionToAccounts(
 }
 
 /**
- * Tasas de cambio de referencia estándar relativas a EUR (Base 1.0)
- * Proporciona una base transparente sin prometer falsa exactitud de mercado en vivo.
- */
-export const DEFAULT_EXCHANGE_RATES: Record<string, number> = {
-  EUR: 1.0,
-  USD: 1.08,
-  MXN: 18.5,
-  COP: 4300.0,
-  ARS: 1100.0,
-  CLP: 1020.0,
-  PEN: 4.1,
-  GBP: 0.85,
-};
-
-/**
- * Convierte un importe monetario entre dos divisas mediante tipo de cambio de referencia.
- */
-export function convertCurrency(
-  amount: number,
-  from: string,
-  to: string,
-  rates: Record<string, number> = DEFAULT_EXCHANGE_RATES
-): number {
-  if (from === to) return amount;
-  const rateFrom = rates[from] || 1.0;
-  const rateTo = rates[to] || 1.0;
-  // Convertir from -> EUR (base 1.0) -> to
-  const amountInBaseEUR = amount / rateFrom;
-  const convertedAmount = amountInBaseEUR * rateTo;
-  return fromCents(Math.round(convertedAmount * 100));
-}
-
-/**
  * Calcula el patrimonio neto agrupado por cada divisa presente en las cuentas.
  * Evita la suma distorsionada de valores heterogéneos (e.g. 100 EUR + 100 USD).
+ * Separa con exactitud activos reales de pasivos reales.
  */
 export function calculateNetWorthByCurrency(accounts: Account[]): Record<string, {
   totalAssets: number;
@@ -540,16 +607,59 @@ export function calculateNetWorthByCurrency(accounts: Account[]): Record<string,
     }
 
     result[cur].accountCount += 1;
-    const balCents = toCents(acc.balance);
-    if (balCents >= 0) {
-      result[cur].totalAssets = addMoney(result[cur].totalAssets, acc.balance);
-    } else {
-      result[cur].totalLiabilities = addMoney(result[cur].totalLiabilities, Math.abs(acc.balance));
-    }
+    const breakdown = getAccountAssetLiabilityBreakdown(acc);
+    result[cur].totalAssets = addMoney(result[cur].totalAssets, breakdown.assetAmount);
+    result[cur].totalLiabilities = addMoney(result[cur].totalLiabilities, breakdown.liabilityAmount);
     result[cur].totalNetWorth = subtractMoney(result[cur].totalAssets, result[cur].totalLiabilities);
   }
 
   return result;
+}
+
+/**
+ * Valida si una cuenta puede ser eliminada con seguridad o si tiene transacciones vinculadas.
+ * Protege la integridad referencial y evita registros huérfanos en transferencias.
+ */
+export function canDeleteAccount(
+  accountId: string,
+  transactions: Transaction[]
+): {
+  canDelete: boolean;
+  transactionCount: number;
+  reason?: string;
+} {
+  const count = transactions.filter(
+    tx => tx.accountId === accountId || tx.toAccountId === accountId
+  ).length;
+
+  if (count > 0) {
+    return {
+      canDelete: false,
+      transactionCount: count,
+      reason: `Esta cuenta está vinculada a ${count} transacciones en el Libro Mayor. Oculta la cuenta o reasigna las transacciones antes de eliminarla para preservar la trazabilidad contable.`,
+    };
+  }
+
+  return { canDelete: true, transactionCount: 0 };
+}
+
+/**
+ * Parsea con seguridad fechas estándar ISO o YYYY-MM-DD previniendo desfases por huso horario local.
+ */
+export function parseDateSafe(dateString: string): Date {
+  if (!dateString) return new Date();
+  if (dateString.length === 10) {
+    return new Date(dateString + 'T12:00:00');
+  }
+  return new Date(dateString);
+}
+
+/**
+ * Comprueba si una transacción pertenece a un periodo (formato YYYY-MM) de forma estricta.
+ */
+export function isDateInPeriod(dateString: string, period: string): boolean {
+  if (!dateString || !period) return false;
+  return dateString.slice(0, 7) === period;
 }
 
 export interface AccountReconciliationDiscrepancy {

@@ -5,6 +5,7 @@ import {
   generateRecoveryKey,
   hashRecoveryKey,
   verifyRecoveryKey,
+  verifyPin,
 } from './security';
 
 describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => {
@@ -78,5 +79,19 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
     // Empty key or missing hash
     expect(await verifyRecoveryKey('', storedHash, salt)).toBe(false);
     expect(await verifyRecoveryKey(key, null, salt)).toBe(false);
+  });
+
+  it('verifies PIN and correctly flags PBKDF2 hashes vs legacy hashes', async () => {
+    const salt = generateSalt(16);
+    const pin = '4826';
+    const pbkdf2Hash = await hashPin(pin, salt);
+
+    expect(pbkdf2Hash.startsWith('pbkdf2$')).toBe(true);
+
+    const isValid = await verifyPin(pin, pbkdf2Hash, salt);
+    expect(isValid).toBe(true);
+
+    const isWrongValid = await verifyPin('9999', pbkdf2Hash, salt);
+    expect(isWrongValid).toBe(false);
   });
 });

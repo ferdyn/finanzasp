@@ -20,6 +20,8 @@ import {
   calculateNetWorthByCurrency,
   convertCurrency,
   auditAccountIntegrity,
+  isLiabilityAccount,
+  canDeleteAccount,
 } from './financialCalculations';
 import { Account, Transaction, Budget, SavingsGoal } from '../types/finance';
 
@@ -450,5 +452,82 @@ describe('auditAccountIntegrity — Ledger Consistency Checks', () => {
     expect(audit.isHealthy).toBe(false);
     expect(audit.discrepancies.length).toBe(1);
     expect(audit.discrepancies[0].discrepancy).toBe(300);
+  });
+});
+
+describe('canDeleteAccount — Referential Integrity Protection', () => {
+  it('allows deletion when account has no associated transactions', () => {
+    const transactions: Transaction[] = [
+      { id: 'tx-1', amount: 50, type: 'expense', categoryId: 'cat', accountId: 'acc-2', date: '2026-03-01' },
+    ];
+    const check = canDeleteAccount('acc-1', transactions);
+    expect(check.canDelete).toBe(true);
+    expect(check.transactionCount).toBe(0);
+  });
+
+  it('prevents deletion when account is used as origin in transactions', () => {
+    const transactions: Transaction[] = [
+      { id: 'tx-1', amount: 50, type: 'expense', categoryId: 'cat', accountId: 'acc-1', date: '2026-03-01' },
+    ];
+    const check = canDeleteAccount('acc-1', transactions);
+    expect(check.canDelete).toBe(false);
+    expect(check.transactionCount).toBe(1);
+    expect(check.reason).toBeDefined();
+  });
+
+  it('prevents deletion when account is used as destination in transfers', () => {
+    const transactions: Transaction[] = [
+      { id: 'tx-1', amount: 100, type: 'transfer', categoryId: 'cat', accountId: 'acc-2', toAccountId: 'acc-1', date: '2026-03-01' },
+    ];
+    const check = canDeleteAccount('acc-1', transactions);
+    expect(check.canDelete).toBe(false);
+    expect(check.transactionCount).toBe(1);
+  });
+});
+
+describe('isLiabilityAccount & Consolidated Multi-Currency Net Worth', () => {
+  it('correctly classifies credit and debt accounts as liabilities regardless of negative sign', () => {
+    expect(isLiabilityAccount({ id: '1', name: '', type: 'credit', balance: 500, currency: 'EUR', color: '', icon: '' })).toBe(true);
+    expect(isLiabilityAccount({ id: '2', name: '', type: 'debt', balance: 1000, currency: 'EUR', color: '', icon: '' })).toBe(true);
+    expect(isLiabilityAccount({ id: '3', name: '', type: 'checking', balance: -50, currency: 'EUR', color: '', icon: '' })).toBe(true);
+    expect(isLiabilityAccount({ id: '4', name: '', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '' })).toBe(false);
+  });
+
+  it('consolidates multi-currency net worth into target currency', () => {
+    const accounts: Account[] = [
+      { id: 'a1', name: 'EUR Account', type: 'checking', balance: 100, currency: 'EUR', color: '', icon: '' },
+      { id: 'a2', name: 'USD Account', type: 'savings', balance: 108, currency: 'USD', color: '', icon: '' }, // 108 USD = 100 EUR
+    ];
+
+    const result = calculateNetWorth(accounts, 'EUR');
+    expect(result.isMultiCurrency).toBe(true);
+    expect(result.currenciesPresent).toEqual(['EUR', 'USD']);
+    // 100 EUR + 100 EUR (converted from 108 USD) = 200 EUR
+    expect(result.totalNetWorth).toBe(200);
+  });
+
+  it('correctly handles cross-currency transfer impact', () => {
+    const accounts: Account[] = [
+      { id: 'acc-eur', name: 'EUR Account', type: 'checking', balance: 500, currency: 'EUR', color: '', icon: '' },
+      { id: 'acc-usd', name: 'USD Account', type: 'savings', balance: 1000, currency: 'USD', color: '', icon: '' },
+    ];
+
+    const tx: Transaction = {
+      id: 'tx-cross',
+      amount: 100, // 100 EUR transferred out
+      type: 'transfer',
+      categoryId: 'cat-x',
+      accountId: 'acc-eur',
+      toAccountId: 'acc-usd',
+      date: '2026-03-01',
+    };
+
+    const impact = calculateTransactionImpact(tx, accounts);
+    // acc-eur loses 100 EUR
+    expect(impact.fromAccountId).toBe('acc-eur');
+    expect(impact.fromDelta).toBe(-100);
+    // acc-usd receives 100 EUR converted to USD: 100 * 1.08 = 108 USD
+    expect(impact.toAccountId).toBe('acc-usd');
+    expect(impact.toDelta).toBe(108);
   });
 });

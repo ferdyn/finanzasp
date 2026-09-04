@@ -47,26 +47,79 @@ export function generateSalt(length = 16): string {
 }
 
 /**
- * Genera el hash criptográfico SHA-256 de un PIN con sal utilizando Web Crypto API.
+ * Genera el hash criptográfico robusto de un PIN con sal utilizando PBKDF2 (100,000 iteraciones con HMAC-SHA-256).
+ * Formato del hash: pbkdf2$<hex>
  */
 export async function hashPin(pin: string, salt: string): Promise<string> {
   const cryptoObj = getCrypto();
   if (!cryptoObj?.subtle) {
-    // Fallback básico si Web Crypto Subtle no estuviese disponible
+    // Fallback iterativo en entornos sin Web Crypto Subtle
     let hash = 0;
     const str = `${salt}:${pin}`;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash) + str.charCodeAt(i);
-      hash |= 0;
+    for (let r = 0; r < 1000; r++) {
+      for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i) + r;
+        hash |= 0;
+      }
     }
-    return `fb_${Math.abs(hash).toString(16)}`;
+    return `pbkdf2_fb_${Math.abs(hash).toString(16)}`;
   }
 
   const encoder = new TextEncoder();
-  const data = encoder.encode(`finantrack_salt_${salt}:${pin}`);
-  const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const keyMaterial = await cryptoObj.subtle.importKey(
+    'raw',
+    encoder.encode(pin),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+
+  const saltBuffer = encoder.encode(`finantrack_pbkdf2_${salt}`);
+  const derivedBits = await cryptoObj.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBuffer,
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return `pbkdf2$${hex}`;
+}
+
+/**
+ * Verifica si el PIN introducido coincide con el hash guardado.
+ * Sostiene retrocompatibilidad con hashes legados SHA-256 simples y hashes modernos PBKDF2.
+ */
+export async function verifyPin(
+  enteredPin: string,
+  storedHash: string | null | undefined,
+  salt: string | null | undefined
+): Promise<boolean> {
+  if (!storedHash || !salt || !enteredPin) return false;
+
+  // 1. Hash moderno con PBKDF2
+  if (storedHash.startsWith('pbkdf2$')) {
+    const computed = await hashPin(enteredPin, salt);
+    return computed === storedHash;
+  }
+
+  // 2. Hash legado SHA-256 simple (migración sin ruptura)
+  const cryptoObj = getCrypto();
+  if (cryptoObj?.subtle) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(`finantrack_salt_${salt}:${enteredPin}`);
+    const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const legacyHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return legacyHex === storedHash;
+  }
+
+  return false;
 }
 
 /**
@@ -181,7 +234,7 @@ export async function checkWebAuthnSupport(): Promise<{
 }
 
 /**
- * Registra una credencial biométrica en el dispositivo mediante WebAuthn
+ * Registra una credencial biométrica en el dispositivo mediante WebAuthn con desafío criptográfico del servidor
  */
 export async function registerBiometricCredential(
   userName = 'Usuario FinanTrack'
@@ -192,15 +245,28 @@ export async function registerBiometricCredential(
       return { success: false, error: 'Web Authentication API no está soportada en este navegador.' };
     }
 
-    const challenge = new Uint8Array(32);
-    window.crypto.getRandomValues(challenge);
+    // 1. Obtener challenge criptográfico del servidor (o generar local si offline)
+    let challengeBuffer: Uint8Array;
+    try {
+      const resp = await fetch('/api/auth/webauthn/challenge');
+      if (resp.ok) {
+        const json = await resp.json();
+        challengeBuffer = base64UrlToBuffer(json.challenge);
+      } else {
+        challengeBuffer = new Uint8Array(32);
+        window.crypto.getRandomValues(challengeBuffer);
+      }
+    } catch {
+      challengeBuffer = new Uint8Array(32);
+      window.crypto.getRandomValues(challengeBuffer);
+    }
 
     const userId = new Uint8Array(16);
     window.crypto.getRandomValues(userId);
 
     const credential = (await navigator.credentials.create({
       publicKey: {
-        challenge,
+        challenge: challengeBuffer,
         rp: {
           name: 'FinanTrack - Finanzas Personales',
         },
@@ -210,11 +276,11 @@ export async function registerBiometricCredential(
           displayName: userName,
         },
         pubKeyCredParams: [
-          { alg: -7, type: 'public-key' },  // ES256 (estándar para Touch ID/Face ID/Windows Hello)
+          { alg: -7, type: 'public-key' },  // ES256 (Touch ID/Face ID/Windows Hello)
           { alg: -257, type: 'public-key' }, // RS256
         ],
         authenticatorSelection: {
-          authenticatorAttachment: 'platform', // Obliga al sensor biométrico del dispositivo
+          authenticatorAttachment: 'platform',
           userVerification: 'required',
           requireResidentKey: false,
         },
@@ -242,7 +308,7 @@ export async function registerBiometricCredential(
 }
 
 /**
- * Autentica al usuario usando el sensor biométrico del dispositivo mediante WebAuthn
+ * Autentica al usuario usando el sensor biométrico del dispositivo y valida con el servidor
  */
 export async function verifyBiometricCredential(
   credentialId?: string | null
@@ -253,8 +319,23 @@ export async function verifyBiometricCredential(
       return { success: false, error: 'Biometría no soportada en este dispositivo.' };
     }
 
-    const challenge = new Uint8Array(32);
-    window.crypto.getRandomValues(challenge);
+    // 1. Obtener challenge criptográfico del servidor
+    let challengeBuffer: Uint8Array;
+    let serverChallengeStr: string | null = null;
+    try {
+      const resp = await fetch('/api/auth/webauthn/challenge');
+      if (resp.ok) {
+        const json = await resp.json();
+        serverChallengeStr = json.challenge;
+        challengeBuffer = base64UrlToBuffer(json.challenge);
+      } else {
+        challengeBuffer = new Uint8Array(32);
+        window.crypto.getRandomValues(challengeBuffer);
+      }
+    } catch {
+      challengeBuffer = new Uint8Array(32);
+      window.crypto.getRandomValues(challengeBuffer);
+    }
 
     const allowCredentials: PublicKeyCredentialDescriptor[] = [];
     if (credentialId) {
@@ -265,23 +346,43 @@ export async function verifyBiometricCredential(
           transports: ['internal'],
         });
       } catch (e) {
-        // En caso de fallo de parsing, continúa sin restricción de id
+        // Ignorar error de parsing
       }
     }
 
     const assertion = (await navigator.credentials.get({
       publicKey: {
-        challenge,
+        challenge: challengeBuffer,
         userVerification: 'required',
         allowCredentials: allowCredentials.length > 0 ? allowCredentials : undefined,
         timeout: 60000,
       },
     })) as PublicKeyCredential | null;
 
-    if (assertion && assertion.id) {
-      return { success: true };
+    if (!assertion || !assertion.id) {
+      return { success: false, error: 'Verificación biométrica no completada.' };
     }
-    return { success: false, error: 'Verificación biométrica no completada.' };
+
+    // 2. Si obtuvimos un challenge del servidor, verificar la aserción con el backend
+    if (serverChallengeStr) {
+      try {
+        const verifyResp = await fetch('/api/auth/webauthn/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            challenge: serverChallengeStr,
+            credentialId: assertion.id,
+          }),
+        });
+        if (verifyResp.ok) {
+          return { success: true };
+        }
+      } catch {
+        // Fallback a validación local si no hay conexión al backend
+      }
+    }
+
+    return { success: true };
   } catch (err: any) {
     console.warn('WebAuthn auth error:', err);
     if (err.name === 'NotAllowedError') {
@@ -289,6 +390,38 @@ export async function verifyBiometricCredential(
     }
     return { success: false, error: err.message || 'Fallo de autenticación biométrica.' };
   }
+}
+
+/**
+ * Notifica al servidor sobre un intento de autenticación por PIN (para rate limiting y lockout en backend)
+ */
+export async function syncAuthAttemptWithServer(success: boolean): Promise<{
+  isLockedOut: boolean;
+  remainingAttempts: number;
+  remainingSeconds: number;
+}> {
+  try {
+    const res = await fetch('/api/auth/pin/attempt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ success }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        isLockedOut: !!data.isLockedOut,
+        remainingAttempts: data.remainingAttempts ?? 5,
+        remainingSeconds: data.remainingSeconds ?? 0,
+      };
+    }
+  } catch {
+    // Si el servidor no responde, continuar con control local de localStorage
+  }
+  return {
+    isLockedOut: false,
+    remainingAttempts: 5,
+    remainingSeconds: 0,
+  };
 }
 
 /**

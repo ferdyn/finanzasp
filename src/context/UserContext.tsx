@@ -194,6 +194,25 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setAuditLogs(prev => [newEntry, ...prev.slice(0, 499)]); // Mantener hasta 500 registros recientes
+
+    // Enviar también al servidor para persistencia de auditoría resistente a manipulaciones locales
+    try {
+      fetch('/api/audit/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: newEntry.action,
+          category: newEntry.category,
+          title: newEntry.title,
+          description: newEntry.description,
+          severity: newEntry.severity,
+          userId: newEntry.userId,
+          userName: newEntry.userName,
+        }),
+      }).catch(() => {});
+    } catch {
+      // Continuar silenciosamente en offline
+    }
   };
 
   // Cambiar de usuario activo

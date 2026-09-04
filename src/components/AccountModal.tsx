@@ -103,8 +103,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
   const handleDelete = () => {
     if (accountToEdit && confirm('¿Estás seguro de eliminar esta cuenta?')) {
-      deleteAccount(accountToEdit.id);
-      onClose();
+      const success = deleteAccount(accountToEdit.id);
+      if (success !== false) {
+        onClose();
+      }
     }
   };
 

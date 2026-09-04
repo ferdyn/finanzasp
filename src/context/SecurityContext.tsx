@@ -5,6 +5,7 @@ import {
   saveSecurityConfig,
   generateSalt,
   hashPin,
+  verifyPin,
   generateRecoveryKey,
   hashRecoveryKey,
   verifyRecoveryKey,
@@ -14,6 +15,7 @@ import {
   getLockoutState,
   recordFailedAttempt,
   clearFailedAttempts,
+  syncAuthAttemptWithServer,
   MAX_FAILED_ATTEMPTS,
 } from '../utils/security';
 
@@ -41,7 +43,6 @@ interface SecurityContextType {
   enableBiometrics: () => Promise<{ success: boolean; error?: string }>;
   disableBiometrics: () => void;
   setAutoLockTimeout: (timeout: SecurityConfig['autoLockTimeout']) => void;
-  resetSecurityData: () => void;
   verifyAndResetWithRecoveryKey: (enteredKey: string) => Promise<{ success: boolean; error?: string }>;
 }
 
@@ -150,7 +151,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Desbloqueo mediante PIN
   const unlockWithPin = useCallback(async (pin: string) => {
-    // Comprobar si hay rate limiting activo
+    // Comprobar si hay rate limiting activo en cliente
     const lockoutState = getLockoutState();
     if (lockoutState.isLockedOut) {
       return {
@@ -167,30 +168,48 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: true };
     }
 
-    const calculatedHash = await hashPin(pin, config.pinSalt);
-    if (calculatedHash === config.pinHash) {
+    const isValid = await verifyPin(pin, config.pinHash, config.pinSalt);
+    if (isValid) {
+      // Si el hash previo era legado SHA-256 (no comenzaba por pbkdf2$), actualizarlo automáticamente a PBKDF2
+      if (!config.pinHash.startsWith('pbkdf2$')) {
+        const modernHash = await hashPin(pin, config.pinSalt);
+        const upgradedCfg = { ...config, pinHash: modernHash };
+        setConfig(upgradedCfg);
+        saveSecurityConfig(upgradedCfg);
+      }
+
       clearFailedAttempts();
+      syncAuthAttemptWithServer(true).catch(() => {});
       setIsLocked(false);
       lastInteractionRef.current = Date.now();
       return { success: true };
     } else {
       const attempt = recordFailedAttempt();
-      if (attempt.isLockedOut) {
+      // Notificar al servidor para registrar intento sospechoso y sincronizar bloqueo
+      const serverAttempt = await syncAuthAttemptWithServer(false);
+
+      const isLockedOut = attempt.isLockedOut || serverAttempt.isLockedOut;
+      const remainingSeconds = Math.max(attempt.remainingSeconds, serverAttempt.remainingSeconds);
+
+      if (isLockedOut) {
         return {
           success: false,
-          error: `Has alcanzado el límite de ${MAX_FAILED_ATTEMPTS} intentos. Bloqueado temporalmente por ${attempt.remainingSeconds}s.`,
+          error: `Has alcanzado el límite de ${MAX_FAILED_ATTEMPTS} intentos. Bloqueado temporalmente por ${remainingSeconds}s.`,
           isLockedOut: true,
-          remainingSeconds: attempt.remainingSeconds,
+          remainingSeconds,
         };
       }
-      const remainingAttempts = MAX_FAILED_ATTEMPTS - attempt.attempts;
+      const remainingAttempts = Math.min(
+        MAX_FAILED_ATTEMPTS - attempt.attempts,
+        serverAttempt.remainingAttempts
+      );
       return {
         success: false,
         error: `PIN incorrecto. Te quedan ${remainingAttempts} intento${remainingAttempts === 1 ? '' : 's'}.`,
         remainingAttempts,
       };
     }
-  }, [config.pinHash, config.pinSalt]);
+  }, [config]);
 
   // Desbloqueo mediante WebAuthn / Biometría
   const unlockWithBiometrics = useCallback(async () => {
@@ -209,6 +228,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const res = await verifyBiometricCredential(config.webAuthnCredentialId);
     if (res.success) {
       clearFailedAttempts();
+      syncAuthAttemptWithServer(true).catch(() => {});
       setIsLocked(false);
       lastInteractionRef.current = Date.now();
       return { success: true };
@@ -253,8 +273,8 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: false, error: 'No hay ningún PIN registrado.' };
     }
 
-    const currentHash = await hashPin(currentPin, config.pinSalt);
-    if (currentHash !== config.pinHash) {
+    const isCurrentValid = await verifyPin(currentPin, config.pinHash, config.pinSalt);
+    if (!isCurrentValid) {
       return { success: false, error: 'El PIN actual no es correcto.' };
     }
 
@@ -279,11 +299,11 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { success: true };
   }, [config]);
 
-  // Desactivar bloqueo por PIN
+  // Desactivar bloqueo por PIN (requiere validación del PIN actual)
   const disableLock = useCallback(async (currentPin: string) => {
     if (config.pinHash && config.pinSalt) {
-      const currentHash = await hashPin(currentPin, config.pinSalt);
-      if (currentHash !== config.pinHash) {
+      const isCurrentValid = await verifyPin(currentPin, config.pinHash, config.pinSalt);
+      if (!isCurrentValid) {
         return { success: false, error: 'PIN incorrecto. No se puede desactivar el bloqueo.' };
       }
     }
@@ -436,7 +456,6 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         enableBiometrics,
         disableBiometrics,
         setAutoLockTimeout,
-        resetSecurityData,
         verifyAndResetWithRecoveryKey,
       }}
     >

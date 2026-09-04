@@ -10,6 +10,7 @@ import {
   calculateNetWorth,
   calculatePeriodMetrics,
   auditAccountIntegrity,
+  canDeleteAccount,
 } from '../utils/financialCalculations';
 import { useUser } from './UserContext';
 
@@ -127,6 +128,8 @@ interface FinanceContextType {
     previousMonthIncome: number;
     expenseDiffPercent: number;
     financialHealthScore: number; // 0 a 100
+    isMultiCurrency?: boolean;
+    currenciesPresent?: string[];
   };
 
   // Helper selectors
@@ -622,9 +625,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
-  const deleteAccount = (id: string) => {
+  const deleteAccount = (id: string): boolean => {
     if (!hasPermission('canManageAccounts')) {
       throw new Error('No tienes permisos suficientes para eliminar cuentas patrimoniales.');
+    }
+    const check = canDeleteAccount(id, transactions);
+    if (!check.canDelete) {
+      alert(check.reason);
+      return false;
     }
     const existing = accounts.find(a => a.id === id);
     setAccounts(prev => prev.filter(a => a.id !== id));
@@ -640,6 +648,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         name: existing?.name,
       },
     });
+    return true;
   };
 
   // Acciones de Categorías
@@ -922,11 +931,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
 
     if (fromAccountId) {
+      const destinationAcc = (targetGoal as any)?.linkedAccountId;
       addTransaction({
         amount,
-        type: 'transfer',
+        type: destinationAcc ? 'transfer' : 'expense',
         categoryId: 'cat-inversiones',
         accountId: fromAccountId,
+        toAccountId: destinationAcc || undefined,
         date: new Date().toISOString().split('T')[0],
         note: `Aporte a meta: ${targetGoal?.name || 'Ahorro'}`,
         tags: ['Ahorro', 'Meta'],
@@ -1206,9 +1217,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Métricas calculadas con precisión atómica en céntimos
   const metrics = useMemo(() => {
-    // Activos vs Pasivos calculados con el motor financiero
-    const netWorthData = calculateNetWorth(accounts);
-    const { totalAssets, totalLiabilities, totalNetWorth } = netWorthData;
+    // Activos vs Pasivos calculados con el motor financiero (con consolidación de divisa)
+    const netWorthData = calculateNetWorth(accounts, currency);
+    const { totalAssets, totalLiabilities, totalNetWorth, isMultiCurrency, currenciesPresent } = netWorthData;
 
     // Periodo actual calculado con el motor financiero
     const currentMetrics = calculatePeriodMetrics(transactions, selectedPeriod);
@@ -1276,6 +1287,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       previousMonthIncome,
       expenseDiffPercent,
       financialHealthScore,
+      isMultiCurrency,
+      currenciesPresent,
     };
   }, [accounts, transactions, selectedPeriod, budgets, currency]);
 

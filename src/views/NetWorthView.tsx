@@ -4,6 +4,7 @@ import { useUser } from '../context/UserContext';
 import { formatMoney } from '../utils/format';
 import { DynamicIcon } from '../components/DynamicIcon';
 import { Account, AccountType } from '../types/finance';
+import { isLiabilityAccount, calculateNetWorthByCurrency } from '../utils/financialCalculations';
 import { DigitalCardsSection } from '../components/DigitalCardsSection';
 import { 
   Landmark, Plus, TrendingUp, ShieldAlert, ArrowUpRight, 
@@ -47,8 +48,11 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
     setAuditReport(auditLedger());
   };
 
-  const assetAccounts = accounts.filter(a => a.balance >= 0);
-  const liabilityAccounts = accounts.filter(a => a.balance < 0 || a.type === 'credit' || a.type === 'debt');
+  const liabilityAccounts = accounts.filter(a => isLiabilityAccount(a));
+  const assetAccounts = accounts.filter(a => !isLiabilityAccount(a));
+  const netWorthByCur = calculateNetWorthByCurrency(accounts);
+  const currencyKeys = Object.keys(netWorthByCur);
+  const hasMultipleCurrencies = currencyKeys.length > 1;
 
   // Distribución por tipo de cuenta
   const typeLabels: Record<AccountType, string> = {
@@ -65,22 +69,22 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
   const assetClasses = [
     {
       name: 'Ahorros & Depósitos',
-      value: accounts.filter(a => a.type === 'savings').reduce((sum, a) => sum + Math.max(0, a.balance), 0),
+      value: accounts.filter(a => a.type === 'savings' && !isLiabilityAccount(a)).reduce((sum, a) => sum + Math.max(0, a.balance), 0),
       color: '#10B981',
     },
     {
       name: 'Inversiones & Fondos',
-      value: accounts.filter(a => a.type === 'investment').reduce((sum, a) => sum + Math.max(0, a.balance), 0),
+      value: accounts.filter(a => a.type === 'investment' && !isLiabilityAccount(a)).reduce((sum, a) => sum + Math.max(0, a.balance), 0),
       color: '#6366F1',
     },
     {
       name: 'Cuentas Corrientes',
-      value: accounts.filter(a => a.type === 'checking').reduce((sum, a) => sum + Math.max(0, a.balance), 0),
+      value: accounts.filter(a => a.type === 'checking' && !isLiabilityAccount(a)).reduce((sum, a) => sum + Math.max(0, a.balance), 0),
       color: '#3B82F6',
     },
     {
       name: 'Efectivo & Otros',
-      value: accounts.filter(a => a.type === 'cash' || a.type === 'crypto').reduce((sum, a) => sum + Math.max(0, a.balance), 0),
+      value: accounts.filter(a => (a.type === 'cash' || a.type === 'crypto') && !isLiabilityAccount(a)).reduce((sum, a) => sum + Math.max(0, a.balance), 0),
       color: '#F59E0B',
     },
   ].filter(item => item.value > 0);
@@ -171,6 +175,40 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
         {/* Decorative background glow */}
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       </div>
+
+      {/* Desglose por Divisa Real cuando existen cuentas multimoneda */}
+      {hasMultipleCurrencies && (
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Desglose Patrimonial por Divisa
+            </span>
+            <span className="text-[11px] text-slate-400">
+              Cálculo sin distorsión de tipos de cambio • Consolidación estimada en {currency}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {currencyKeys.map(c => {
+              const curData = netWorthByCur[c];
+              return (
+                <div key={c} className="p-3 bg-slate-50 dark:bg-slate-800/70 rounded-xl border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-xs px-2 py-0.5 rounded bg-slate-200/80 dark:bg-slate-700 text-slate-800 dark:text-slate-200">{c}</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">{curData.accountCount} {curData.accountCount === 1 ? 'cuenta' : 'cuentas'}</span>
+                  </div>
+                  <div className="text-base font-bold text-slate-900 dark:text-white font-mono-num">
+                    {formatMoney(curData.totalNetWorth, c as any)}
+                  </div>
+                  <div className="text-[11px] flex justify-between mt-1 pt-1 border-t border-slate-200/60 dark:border-slate-700/40">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-mono-num font-medium">+{formatMoney(curData.totalAssets, c as any)}</span>
+                    <span className="text-rose-600 dark:text-rose-400 font-mono-num font-medium">-{formatMoney(curData.totalLiabilities, c as any)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Sección de Gestión de Tarjetas Digitales con Acciones Rápidas (Página 6 Directrices UX) */}
       <DigitalCardsSection
@@ -292,7 +330,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
 
                 <div className="flex items-center gap-3">
                   <span className="text-base font-bold text-slate-900 dark:text-white font-mono-num">
-                    {formatMoney(acc.balance, currency)}
+                    {formatMoney(acc.balance, (acc.currency as any) || currency)}
                   </span>
                   {canEditAccounts && (
                     <button
@@ -349,14 +387,14 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-400">
-                        {acc.creditLimit ? `Límite: ${formatMoney(acc.creditLimit, currency)}` : typeLabels[acc.type]}
+                        {acc.creditLimit ? `Límite: ${formatMoney(acc.creditLimit, (acc.currency as any) || currency)}` : typeLabels[acc.type]}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3">
                     <span className="text-base font-bold text-red-600 dark:text-red-400 font-mono-num">
-                      {formatMoney(acc.balance, currency)}
+                      -{formatMoney(Math.abs(acc.balance), (acc.currency as any) || currency)}
                     </span>
                     {canEditAccounts && (
                       <button
