@@ -949,13 +949,15 @@ Generado con FinanTrack Pro`;
             {/* VISTA MÓVIL: Tarjetas compactas sin desbordes ni descuadres */}
             <div className={`${mobileTableViewMode === 'cards' ? 'block sm:hidden' : 'hidden'} print:hidden space-y-2.5`}>
               {accountsData.list.map((acc) => {
-                const typeLabel = {
+                const typeLabel = ({
                   checking: 'Cuenta Corriente',
                   savings: 'Cuenta Ahorro',
                   cash: 'Efectivo',
                   credit: 'Tarjeta de Crédito / Pasivo',
-                  investment: 'Inversión'
-                }[acc.type] || 'Cuenta';
+                  investment: 'Inversión',
+                  crypto: 'Criptoactivos',
+                  debt: 'Deuda / Pasivo'
+                } as Record<string, string>)[acc.type] || 'Cuenta';
 
                 const baseTotal = acc.isLiability ? accountsData.totalLiabilities : accountsData.totalAssets;
                 const sharePct = baseTotal > 0 ? Math.round((Math.abs(acc.balance) / baseTotal) * 100) : 0;
@@ -1017,13 +1019,15 @@ Generado con FinanTrack Pro`;
                 </thead>
                 <tbody>
                   {accountsData.list.map((acc, index) => {
-                    const typeLabel = {
+                    const typeLabel = ({
                       checking: 'Cuenta Corriente',
                       savings: 'Cuenta Ahorro',
                       cash: 'Efectivo',
                       credit: 'Tarjeta de Crédito / Pasivo',
-                      investment: 'Inversión'
-                    }[acc.type] || 'Cuenta';
+                      investment: 'Inversión',
+                      crypto: 'Criptoactivos',
+                      debt: 'Deuda / Pasivo'
+                    } as Record<string, string>)[acc.type] || 'Cuenta';
 
                     const baseTotal = acc.isLiability ? accountsData.totalLiabilities : accountsData.totalAssets;
                     const sharePct = baseTotal > 0 ? Math.round((Math.abs(acc.balance) / baseTotal) * 100) : 0;
@@ -1289,7 +1293,7 @@ Generado con FinanTrack Pro`;
                       <div className="min-w-0">
                         <h4 className="font-bold text-xs text-slate-900 leading-snug truncate">{g.name}</h4>
                         <span className="text-[10px] text-slate-500">
-                          {g.targetDate ? `Límite: ${formatDate(g.targetDate)}` : 'Sin fecha límite'}
+                          {g.deadline ? `Límite: ${formatDate(g.deadline)}` : 'Sin fecha límite'}
                         </span>
                       </div>
                       <div className="text-right shrink-0">
@@ -1355,7 +1359,7 @@ Generado con FinanTrack Pro`;
                           {formatReportMoney(remaining)}
                         </td>
                         <td className="p-2 border-b border-slate-300 text-center font-mono text-slate-600 hidden sm:table-cell print:table-cell">
-                          {g.targetDate ? formatDate(g.targetDate) : 'Sin fecha'}
+                          {g.deadline ? formatDate(g.deadline) : 'Sin fecha'}
                         </td>
                       </tr>
                     );

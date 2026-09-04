@@ -78,7 +78,7 @@ export function generateSecureRandomNumber(min: number, max: number): number {
 }
 
 /**
- * Genera el hash criptográfico robusto de un PIN con sal utilizando PBKDF2 (100,000 iteraciones con HMAC-SHA-256).
+ * Genera el hash criptográfico robusto de un PIN con sal utilizando PBKDF2 (600,000 iteraciones con HMAC-SHA-256).
  * Formato del hash: pbkdf2$<hex>
  */
 export async function hashPin(pin: string, salt: string): Promise<string> {
@@ -98,7 +98,7 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
       {
         name: 'PBKDF2',
         salt: saltBuffer,
-        iterations: 100000,
+        iterations: 600000,
         hash: 'SHA-256',
       },
       keyMaterial,
@@ -117,7 +117,7 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
       const derived = nodeCrypto.pbkdf2Sync(
         pin,
         `finantrack_pbkdf2_${salt}`,
-        100000,
+        600000,
         32,
         'sha256'
       );
@@ -198,7 +198,7 @@ export function generateRecoveryKey(): string {
 }
 
 /**
- * Genera el hash criptográfico robusto de una Clave Maestra de Recuperación con sal utilizando PBKDF2 (100,000 iteraciones con HMAC-SHA-256).
+ * Genera el hash criptográfico robusto de una Clave Maestra de Recuperación con sal utilizando PBKDF2 (600,000 iteraciones con HMAC-SHA-256).
  * Formato: pbkdf2_rec$<hex>
  */
 export async function hashRecoveryKey(key: string, salt: string): Promise<string> {
@@ -219,7 +219,7 @@ export async function hashRecoveryKey(key: string, salt: string): Promise<string
       {
         name: 'PBKDF2',
         salt: saltBuffer,
-        iterations: 100000,
+        iterations: 600000,
         hash: 'SHA-256',
       },
       keyMaterial,
@@ -237,7 +237,7 @@ export async function hashRecoveryKey(key: string, salt: string): Promise<string
       const derived = nodeCrypto.pbkdf2Sync(
         normalized,
         `finantrack_rec_pbkdf2_${salt}`,
-        100000,
+        600000,
         32,
         'sha256'
       );

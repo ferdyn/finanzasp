@@ -248,7 +248,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(val: number) => [formatMoney(val, currency), 'Total']}
+                    formatter={(val: any) => [formatMoney(Number(val) || 0, currency), 'Total']}
                     contentStyle={{
                       backgroundColor: '#1e293b',
                       borderRadius: '12px',

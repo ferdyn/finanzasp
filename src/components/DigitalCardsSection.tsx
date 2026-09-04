@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DigitalCard } from '../types/digitalCards';
+import { DigitalCard, CardStatus } from '../types/digitalCards';
 import { formatMoney } from '../utils/format';
 import { CurrencyCode } from '../types/finance';
 import { 
@@ -34,7 +34,6 @@ const INITIAL_CARDS: DigitalCard[] = [
     lastFour: '4829',
     fullNumberMasked: '4532 •••• •••• 4829',
     expiryDate: '08/28',
-    cvv: '842',
     status: 'active',
     colorGradient: 'from-slate-900 via-indigo-950 to-slate-900 border-indigo-500/30',
     monthlyLimit: 3000,
@@ -52,7 +51,6 @@ const INITIAL_CARDS: DigitalCard[] = [
     lastFour: '9150',
     fullNumberMasked: '5412 •••• •••• 9150',
     expiryDate: '11/27',
-    cvv: '319',
     status: 'active',
     colorGradient: 'from-slate-900 via-emerald-950 to-slate-900 border-emerald-500/30',
     monthlyLimit: 1500,
@@ -71,21 +69,35 @@ export const DigitalCardsSection: React.FC<DigitalCardsSectionProps> = ({
   const [cards, setCards] = useState<DigitalCard[]>(() => {
     try {
       const saved = localStorage.getItem('finantrack_digital_cards');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Sanitización estricta: asegurar que ningún CVV persista en almacenamiento
+          return parsed.map((c: any) => {
+            const { cvv, ...safeCard } = c;
+            return safeCard as DigitalCard;
+          });
+        }
+      }
     } catch {}
     return INITIAL_CARDS;
   });
 
   const [selectedCardId, setSelectedCardId] = useState<string>(cards[0]?.id || 'card-1');
-  const [revealedCvvCardId, setRevealedCvvCardId] = useState<string | null>(null);
+  const [revealedNumberCardId, setRevealedNumberCardId] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const selectedCard = cards.find(c => c.id === selectedCardId) || cards[0];
 
   const saveCards = (newCards: DigitalCard[]) => {
-    setCards(newCards);
+    // Sanitizar antes de guardar en almacenamiento local para no guardar jamás CVV
+    const sanitized = newCards.map(c => {
+      const { ...safeCard } = c;
+      return safeCard;
+    });
+    setCards(sanitized);
     try {
-      localStorage.setItem('finantrack_digital_cards', JSON.stringify(newCards));
+      localStorage.setItem('finantrack_digital_cards', JSON.stringify(sanitized));
     } catch {}
   };
 
@@ -99,8 +111,8 @@ export const DigitalCardsSection: React.FC<DigitalCardsSectionProps> = ({
     const target = cards.find(c => c.id === cardId);
     if (!target) return;
 
-    const newStatus = target.status === 'active' ? 'frozen' : 'active';
-    const updated = cards.map(c => c.id === cardId ? { ...c, status: newStatus } : c);
+    const newStatus: CardStatus = target.status === 'active' ? 'frozen' : 'active';
+    const updated: DigitalCard[] = cards.map(c => c.id === cardId ? { ...c, status: newStatus } : c);
     saveCards(updated);
     
     // Feedback háptico
@@ -111,21 +123,21 @@ export const DigitalCardsSection: React.FC<DigitalCardsSectionProps> = ({
     showToast(newStatus === 'frozen' ? 'Tarjeta bloqueada temporalmente' : 'Tarjeta desbloqueada y operativa');
   };
 
-  const handleRevealCvv = (cardId: string) => {
-    if (revealedCvvCardId === cardId) {
-      setRevealedCvvCardId(null);
+  const handleRevealNumber = (cardId: string) => {
+    if (revealedNumberCardId === cardId) {
+      setRevealedNumberCardId(null);
       return;
     }
 
     // Solicitar PIN de seguridad si la callback existe
     if (onOpenSecurityPinPrompt) {
       onOpenSecurityPinPrompt(() => {
-        setRevealedCvvCardId(cardId);
-        setTimeout(() => setRevealedCvvCardId(null), 15000); // Auto-ocultar tras 15 segundos por seguridad
+        setRevealedNumberCardId(cardId);
+        setTimeout(() => setRevealedNumberCardId(null), 15000); // Auto-ocultar tras 15 segundos por seguridad
       });
     } else {
-      setRevealedCvvCardId(cardId);
-      setTimeout(() => setRevealedCvvCardId(null), 15000);
+      setRevealedNumberCardId(cardId);
+      setTimeout(() => setRevealedNumberCardId(null), 15000);
     }
   };
 
@@ -146,7 +158,7 @@ export const DigitalCardsSection: React.FC<DigitalCardsSectionProps> = ({
             <span>Tarjetas Digitales Vinculadas</span>
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Control directo de bloqueo, CVV dinámico y límites mensuales
+            Control directo de bloqueo, canales de pago y límites mensuales
           </p>
         </div>
 
@@ -208,7 +220,7 @@ export const DigitalCardsSection: React.FC<DigitalCardsSectionProps> = ({
                     Número de Tarjeta
                   </span>
                   <div className="text-base sm:text-lg font-mono font-bold text-white tracking-widest">
-                    {revealedCvvCardId === card.id ? card.fullNumberMasked : `•••• •••• •••• ${card.lastFour}`}
+                    {revealedNumberCardId === card.id ? card.fullNumberMasked : `•••• •••• •••• ${card.lastFour}`}
                   </div>
                 </div>
 
@@ -224,9 +236,9 @@ export const DigitalCardsSection: React.FC<DigitalCardsSectionProps> = ({
                       <span className="text-xs font-mono font-bold">{card.expiryDate}</span>
                     </div>
                     <div>
-                      <span className="text-[9px] text-slate-400 uppercase tracking-wider block">CVV</span>
-                      <span className="text-xs font-mono font-bold">
-                        {revealedCvvCardId === card.id ? card.cvv : '•••'}
+                      <span className="text-[9px] text-slate-400 uppercase tracking-wider block">Estado</span>
+                      <span className="text-xs font-mono font-bold capitalize">
+                        {card.status === 'active' ? 'Operativa' : 'Bloqueada'}
                       </span>
                     </div>
                   </div>
@@ -270,21 +282,21 @@ export const DigitalCardsSection: React.FC<DigitalCardsSectionProps> = ({
                     )}
                   </button>
 
-                  {/* Ver Datos Seguros / CVV */}
+                  {/* Ver Datos Seguros / Número Completo */}
                   <button
                     type="button"
-                    onClick={() => handleRevealCvv(selectedCard.id)}
+                    onClick={() => handleRevealNumber(selectedCard.id)}
                     className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/80 text-xs font-bold transition-all flex flex-col items-center justify-center gap-2 text-center min-h-[72px]"
                   >
-                    {revealedCvvCardId === selectedCard.id ? (
+                    {revealedNumberCardId === selectedCard.id ? (
                       <>
                         <EyeOff className="w-5 h-5 text-indigo-500" />
-                        <span>Ocultar CVV</span>
+                        <span>Ocultar Número</span>
                       </>
                     ) : (
                       <>
                         <Eye className="w-5 h-5 text-indigo-500" />
-                        <span>Ver CVV Seguro</span>
+                        <span>Ver Número</span>
                       </>
                     )}
                   </button>

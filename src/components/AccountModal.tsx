@@ -95,7 +95,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     if (accountToEdit) {
       updateAccount(accountToEdit.id, payload);
     } else {
-      addAccount(payload);
+      addAccount({
+        ...payload,
+        initialBalance: parsedBalance,
+      });
     }
 
     onClose();

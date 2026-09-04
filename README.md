@@ -7,7 +7,7 @@ FinanTrack Pro es una aplicación de gestión patrimonial, presupuestaria y cont
 ## 🔒 Arquitectura de Seguridad y Criptografía
 
 ### 1. Autenticación y Criptografía Robusta
-- **PBKDF2**: Todos los PINs y Claves de Recuperación se derivan utilizando **PBKDF2 con 100.000 iteraciones**, HMAC-SHA-256 y sales criptográficas independientes de 16 bytes generadas mediante CSPRNG (`crypto.getRandomValues()`).
+- **PBKDF2**: Todos los PINs y Claves de Recuperación se derivan utilizando **PBKDF2 con 600.000 iteraciones** (estándar OWASP), HMAC-SHA-256 y sales criptográficas independientes de 16 bytes generadas mediante CSPRNG (`crypto.getRandomValues()`).
 - **Recovery Key de Alta Entropía**:
   - Estándar: `RECOVER-XXXX-XXXX-XXXX-XXXX` (16 caracteres base-32 de alta legibilidad, 80 bits de entropía).
   - Alfabeto Crockford sin caracteres ambiguos (`0`, `1`, `I`, `O`).

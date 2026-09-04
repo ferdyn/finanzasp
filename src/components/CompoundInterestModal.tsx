@@ -194,7 +194,7 @@ export const CompoundInterestModal: React.FC<CompoundInterestModalProps> = ({ is
                   <XAxis dataKey="year" stroke="#94a3b8" fontSize={11} />
                   <YAxis stroke="#94a3b8" fontSize={11} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
                   <Tooltip 
-                    formatter={(val: number) => formatMoney(val, currency)}
+                    formatter={(val: any) => formatMoney(Number(val) || 0, currency)}
                     labelStyle={{ fontWeight: 'bold' }}
                     contentStyle={{ borderRadius: '12px', border: '1px solid #64748b', backgroundColor: 'rgba(15, 23, 42, 0.9)', color: '#f8fafc', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
                   />

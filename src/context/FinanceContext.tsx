@@ -83,7 +83,7 @@ interface FinanceContextType {
   // Acciones de Cuentas
   addAccount: (account: Omit<Account, 'id'>) => void;
   updateAccount: (id: string, account: Partial<Account>) => void;
-  deleteAccount: (id: string) => void;
+  deleteAccount: (id: string) => boolean;
 
   // Acciones de Categorías
   addCategory: (category: Omit<Category, 'id'>) => void;

@@ -40,12 +40,16 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     }
   });
 
-  describe('Health Endpoint', () => {
-    it('returns status ok and ISO timestamp', async () => {
+  describe('Health Endpoint and Security Headers', () => {
+    it('returns status ok, ISO timestamp and includes HTTP security headers (helmet)', async () => {
       const res = await request(app).get('/api/health');
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('ok');
       expect(res.body.timestamp).toBeDefined();
+
+      // Helmet headers
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['x-frame-options']).toBeDefined();
     });
   });
 
@@ -248,6 +252,35 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       expect(provRes.status).toBe(200);
       expect(provRes.body.user.id).toBe('user-member');
       expect(provRes.body.user.role).toBe('member');
+    });
+
+    it('strictly enforces 5-attempt brute force lockout directly against /api/auth/session', async () => {
+      // 4 failed attempts on /api/auth/session
+      for (let i = 0; i < 4; i++) {
+        const failedRes = await request(app)
+          .post('/api/auth/session')
+          .send({ userId: 'user-admin', pin: '0000' });
+        expect(failedRes.status).toBe(401);
+      }
+
+      // 5th failed attempt must trigger 429 lockout
+      const fifthRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-admin', pin: '0000' });
+      expect(fifthRes.status).toBe(429);
+      expect(fifthRes.body.isLockedOut).toBe(true);
+      expect(fifthRes.body.remainingSeconds).toBeGreaterThan(0);
+
+      // Even with the CORRECT PIN, subsequent requests must be rejected with 429 while locked out
+      const lockedRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'user-admin', pin: TEST_FIXTURE_PIN });
+      expect(lockedRes.status).toBe(429);
+      expect(lockedRes.body.isLockedOut).toBe(true);
+
+      // PIN status endpoint must also reflect lockout
+      const statusRes = await request(app).get('/api/auth/pin/status');
+      expect(statusRes.body.isLockedOut).toBe(true);
     });
 
     it('strictly ignores x-user-* header spoofing attempts (prevents bypass)', async () => {

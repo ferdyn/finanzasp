@@ -5,7 +5,7 @@ import { Lock, KeyRound, Check, X, AlertCircle, ShieldCheck } from 'lucide-react
 interface SecurityPinModalProps {
   isOpen: boolean;
   onClose: () => void;
-  mode: 'setup' | 'change' | 'disable';
+  mode: 'setup' | 'change' | 'disable' | 'unlock';
   onSuccess?: () => void;
 }
 
@@ -15,7 +15,7 @@ export const SecurityPinModal: React.FC<SecurityPinModalProps> = ({
   mode,
   onSuccess,
 }) => {
-  const { setupPin, changePin, disableLock, pinLength } = useSecurity();
+  const { setupPin, changePin, disableLock, unlockWithPin, pinLength } = useSecurity();
 
   // Estados de inputs
   const [currentPin, setCurrentPin] = useState('');
@@ -32,7 +32,7 @@ export const SecurityPinModal: React.FC<SecurityPinModalProps> = ({
       setNewPin('');
       setConfirmPin('');
       setError('');
-      if (mode === 'change' || mode === 'disable') {
+      if (mode === 'change' || mode === 'disable' || mode === 'unlock') {
         setStep('current');
       } else {
         setStep('new');
@@ -45,6 +45,23 @@ export const SecurityPinModal: React.FC<SecurityPinModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (mode === 'unlock') {
+      if (!currentPin || currentPin.length < 4) {
+        setError('Introduce tu PIN de seguridad.');
+        return;
+      }
+      setIsSubmitting(true);
+      const res = await unlockWithPin(currentPin);
+      setIsSubmitting(false);
+      if (res.success) {
+        onSuccess?.();
+        onClose();
+      } else {
+        setError(res.error || 'PIN incorrecto.');
+      }
+      return;
+    }
 
     if (mode === 'disable') {
       if (!currentPin || currentPin.length < 4) {
@@ -133,11 +150,13 @@ export const SecurityPinModal: React.FC<SecurityPinModalProps> = ({
                 {mode === 'setup' && 'Configurar PIN de Seguridad'}
                 {mode === 'change' && 'Cambiar PIN de Seguridad'}
                 {mode === 'disable' && 'Desactivar Bloqueo de Pantalla'}
+                {mode === 'unlock' && 'Verificar PIN de Seguridad'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {mode === 'setup' && 'Protege tus finanzas al abrir la app'}
                 {mode === 'change' && 'Actualiza tu clave de acceso'}
                 {mode === 'disable' && 'Confirma con tu PIN actual'}
+                {mode === 'unlock' && 'Introduce tu PIN para autorizar la acción'}
               </p>
             </div>
           </div>
@@ -161,10 +180,10 @@ export const SecurityPinModal: React.FC<SecurityPinModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Paso: Verificar PIN actual */}
-          {((mode === 'change' && step === 'current') || mode === 'disable') && (
+          {((mode === 'change' && step === 'current') || mode === 'disable' || mode === 'unlock') && (
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Introduce tu PIN actual
+                {mode === 'unlock' ? 'Introduce tu PIN de seguridad' : 'Introduce tu PIN actual'}
               </label>
               <input
                 type="password"
@@ -239,7 +258,9 @@ export const SecurityPinModal: React.FC<SecurityPinModalProps> = ({
               className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-xs font-bold text-white shadow-sm shadow-emerald-500/30 transition-all flex items-center justify-center gap-1.5"
             >
               {isSubmitting ? (
-                <span>Guardando...</span>
+                <span>Verificando...</span>
+              ) : mode === 'unlock' ? (
+                <span>Confirmar PIN</span>
               ) : mode === 'disable' ? (
                 <span>Desactivar</span>
               ) : step === 'confirm' ? (

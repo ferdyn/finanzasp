@@ -91,12 +91,13 @@ function MainLayout() {
   const [fraudAlertData, setFraudAlertData] = useState<FraudAlertData | null>({
     id: 'fraud_sim_01',
     cardLastFour: '4242',
-    merchantName: 'CryptoExchange Global Inc (London)',
+    cardBrand: 'visa',
+    merchant: 'CryptoExchange Global Inc (London)',
     amount: 850.00,
     currency: 'EUR',
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     location: 'Londres, Reino Unido (IP Anómala)',
-    category: 'Finanzas / Cripto',
+    status: 'pending',
     riskReason: 'Transacción internacional inusual fuera del horario habitual y sin 3D Secure previo.',
   });
 

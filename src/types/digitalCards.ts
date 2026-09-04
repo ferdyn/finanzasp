@@ -11,7 +11,6 @@ export interface DigitalCard {
   lastFour: string;
   fullNumberMasked: string;
   expiryDate: string; // MM/YY
-  cvv: string;
   status: CardStatus;
   colorGradient: string;
   monthlyLimit: number;

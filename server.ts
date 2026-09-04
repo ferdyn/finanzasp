@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import crypto from "crypto";
+import helmet from "helmet";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
@@ -101,7 +102,7 @@ export function hashPinSync(pin: string, salt: string): string {
   const derived = crypto.pbkdf2Sync(
     pin,
     `finantrack_pbkdf2_${salt}`,
-    100000,
+    600000,
     32,
     'sha256'
   );
@@ -124,7 +125,7 @@ export const serverUserCredentials = new Map<string, ServerUserCredential>();
  * Verifica el PIN del usuario contra su credencial en serverUserCredentials.
  * Si el usuario posee un hash legado SHA-256:
  * 1. Verifica la credencial con el hash legado.
- * 2. Si es válido, deriva inmediatamente un nuevo hash moderno PBKDF2 (100,000 iteraciones).
+ * 2. Si es válido, deriva inmediatamente un nuevo hash moderno PBKDF2 (600,000 iteraciones).
  * 3. Persiste el nuevo hash en serverUserCredentials (almacenamiento real).
  * 4. A partir de ese momento, el hash legado queda sobrescrito y deja de ser aceptado.
  */
@@ -154,7 +155,7 @@ export function verifyAndMigrateUserPinSync(
   const isLegacyValid = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
 
   if (isLegacyValid) {
-    // 3. Generar nuevo hash robusto PBKDF2 (100,000 iteraciones)
+    // 3. Generar nuevo hash robusto PBKDF2 (600,000 iteraciones)
     const modernHash = hashPinSync(pin, creds.pinSalt);
     // 4. Persistir en el almacenamiento real de credenciales
     serverUserCredentials.set(userId, {
@@ -174,7 +175,7 @@ export function hashRecoveryKeySync(key: string, salt: string): string {
   const derived = crypto.pbkdf2Sync(
     normalized,
     `finantrack_rec_pbkdf2_${salt}`,
-    100000,
+    600000,
     32,
     'sha256'
   );
@@ -185,7 +186,7 @@ export function hashRecoveryKeySync(key: string, salt: string): string {
  * Verifica la Clave Maestra de Recuperación.
  * Si la configuración previa almacenaba un hash legado SHA-256:
  * 1. Valida la clave con el formato legado.
- * 2. Si es válida, deriva inmediatamente un hash PBKDF2 (100,000 iteraciones).
+ * 2. Si es válida, deriva inmediatamente un hash PBKDF2 (600,000 iteraciones).
  * 3. Persiste el nuevo hash en serverRecoveryConfig (almacenamiento real).
  * 4. El hash antiguo deja de existir y nunca más se acepta.
  */
@@ -403,6 +404,11 @@ function getAiClient(): GoogleGenAI | null {
 export function createApp(): express.Express {
   const app = express();
 
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }));
+
   app.use(express.json({ limit: "1mb" }));
 
   // Endpoint de salud
@@ -412,6 +418,21 @@ export function createApp(): express.Express {
 
   // --- 1. Sesiones de Usuario y RBAC ---
   app.post("/api/auth/session", (req, res) => {
+    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+    const now = Date.now();
+    const lockoutRecord = ipLockoutState.get(ip);
+
+    // Comprobación de lockout por fuerza bruta por IP
+    if (lockoutRecord && lockoutRecord.lockoutUntil > now) {
+      const remainingSeconds = Math.ceil((lockoutRecord.lockoutUntil - now) / 1000);
+      return res.status(429).json({
+        isLockedOut: true,
+        remainingAttempts: 0,
+        remainingSeconds,
+        error: `Dispositivo bloqueado temporalmente por seguridad. Espera ${remainingSeconds} segundos.`,
+      });
+    }
+
     const { userId, pin, password } = req.body || {};
     const callerSession = extractSession(req);
     const callerPerms = callerSession ? (ROLE_PERMISSIONS[callerSession.role] || []) : [];
@@ -441,10 +462,47 @@ export function createApp(): express.Express {
     }
 
     if (!isAuthenticated) {
+      // Registrar intento fallido en ipLockoutState
+      let record = ipLockoutState.get(ip);
+      if (!record) {
+        record = { failedAttempts: 1, lockoutUntil: 0, lastAttempt: now };
+      } else {
+        record.failedAttempts += 1;
+        record.lastAttempt = now;
+      }
+
+      if (record.failedAttempts >= 5) {
+        record.lockoutUntil = now + 30 * 1000;
+        ipLockoutState.set(ip, record);
+
+        serverAuditLogs.unshift({
+          id: `srv-audit-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+          timestamp: new Date().toISOString(),
+          ip,
+          action: 'SECURITY_LOCKOUT',
+          category: 'seguridad',
+          title: 'Bloqueo por Intentos Excesivos de PIN',
+          description: `La dirección ${ip} fue bloqueada tras 5 intentos fallidos consecutivos en /api/auth/session.`,
+          severity: 'danger',
+        });
+
+        return res.status(429).json({
+          isLockedOut: true,
+          remainingAttempts: 0,
+          remainingSeconds: 30,
+          error: "Dispositivo bloqueado temporalmente por seguridad. Espera 30 segundos.",
+        });
+      }
+
+      ipLockoutState.set(ip, record);
+
       return res.status(401).json({
         error: "Autenticación requerida. Se debe proporcionar una credencial válida (PIN verificado) para obtener una sesión.",
       });
     }
+
+    // Autenticación exitosa: reiniciar contador de lockout
+    ipLockoutState.delete(ip);
 
     // El servidor impone el rol real registrado
     const finalRole: ServerUserRole = targetUser.role;
@@ -946,39 +1004,43 @@ export function createApp(): express.Express {
   });
 
   // --- 4. Auditoría en Servidor Protegida por RBAC y Atribución Fidedigna de Autor ---
-  app.post("/api/audit/log", (req, res) => {
-    const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
-    const { action, category, title, description, severity } = req.body;
+  app.post(
+    "/api/audit/log",
+    createRateLimiter('audit_log', 30, 60 * 1000),
+    (req, res) => {
+      const ip = req.ip || req.socket.remoteAddress || "127.0.0.1";
+      const { action, category, title, description, severity } = req.body;
 
-    if (!title || !description) {
-      return res.status(400).json({ error: "Datos de auditoría incompletos" });
+      if (!title || !description) {
+        return res.status(400).json({ error: "Datos de auditoría incompletos" });
+      }
+
+      // La identidad del autor se extrae estrictamente de la sesión autenticada
+      const session = extractSession(req);
+      const actorUserId = session ? session.userId : undefined;
+      const actorUserName = session ? session.userName : 'Cliente (Anónimo)';
+
+      const newLog: ServerAuditLog = {
+        id: `srv-log-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+        timestamp: new Date().toISOString(),
+        ip,
+        userId: actorUserId,
+        userName: actorUserName,
+        action: action ? String(action).slice(0, 50) : 'SYSTEM_ACTION',
+        category: category ? String(category).slice(0, 50) : 'sistema',
+        title: String(title).slice(0, 100),
+        description: String(description).slice(0, 255),
+        severity: ['info', 'warning', 'danger', 'success'].includes(severity) ? severity : 'info',
+      };
+
+      serverAuditLogs.unshift(newLog);
+      if (serverAuditLogs.length > 1000) {
+        serverAuditLogs.pop();
+      }
+
+      res.json({ success: true, logId: newLog.id });
     }
-
-    // La identidad del autor se extrae estrictamente de la sesión autenticada
-    const session = extractSession(req);
-    const actorUserId = session ? session.userId : undefined;
-    const actorUserName = session ? session.userName : 'Cliente (Anónimo)';
-
-    const newLog: ServerAuditLog = {
-      id: `srv-log-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
-      timestamp: new Date().toISOString(),
-      ip,
-      userId: actorUserId,
-      userName: actorUserName,
-      action: action ? String(action).slice(0, 50) : 'SYSTEM_ACTION',
-      category: category ? String(category).slice(0, 50) : 'sistema',
-      title: String(title).slice(0, 100),
-      description: String(description).slice(0, 255),
-      severity: ['info', 'warning', 'danger', 'success'].includes(severity) ? severity : 'info',
-    };
-
-    serverAuditLogs.unshift(newLog);
-    if (serverAuditLogs.length > 1000) {
-      serverAuditLogs.pop();
-    }
-
-    res.json({ success: true, logId: newLog.id });
-  });
+  );
 
   app.get("/api/audit/logs", requirePermission('canViewAuditLogs'), (req, res) => {
     res.json({ logs: serverAuditLogs.slice(0, 100) });
@@ -1064,7 +1126,7 @@ Instrucciones de seguridad y comportamiento:
 3. Sé motivador, prudente y profesional. Máximo 3 o 4 párrafos concisos.
 4. IMPORTANTE: Bajo ninguna circunstancia intentes o finjas realizar transferencias bancarias, alterar permisos de usuario, modificar saldos o ejecutar transacciones. Eres un asesor exclusivamente consultivo.`;
 
-        const candidateModels = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.1-flash-lite"];
+        const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
         let answer = "";
         let lastError = null;
 
