@@ -443,6 +443,19 @@ export const ReportView: React.FC<ReportViewProps> = ({ onBack }) => {
     }, 200);
   };
 
+  // Función dedicada para Generar Informe Financiero en PDF Estructurado (aprovechando reglas @media print de src/index.css)
+  const handleGenerateStructuredPDF = () => {
+    showToast('📑 Generando informe financiero estructurado en PDF. En la ventana de impresión, selecciona "Guardar como PDF".');
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch (e) {
+        console.warn('Impresión/PDF bloqueada por entorno:', e);
+        handleSaveReport();
+      }
+    }, 250);
+  };
+
   // Copiar resumen de texto al portapapeles
   const handleCopyTextSummary = () => {
     const summary = `📄 REPORTE FINANCIERO - FINANTRACK PRO
@@ -566,17 +579,29 @@ Generado con FinanTrack Pro`;
             </div>
           </div>
 
-          {/* Botones de Acción Primaria (Imprimir, Guardar Documento, Informes Guardados, Exportar CSV) */}
+          {/* Botones de Acción Primaria (Generar PDF Estructurado, Imprimir, Guardar Documento, Informes Guardados, Exportar CSV) */}
           <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+            {/* Botón Principal Requerido: Generar Informe Financiero en PDF Estructurado */}
+            <button
+              type="button"
+              onClick={handleGenerateStructuredPDF}
+              id="btn-generate-structured-pdf"
+              title="Generar informe financiero en PDF estructurado según normativas contables y reglas de impresión"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-600/25 transition-all cursor-pointer"
+            >
+              <FileText className="w-4 h-4 stroke-[2.5]" />
+              <span>Generar Informe en PDF</span>
+            </button>
+
             <button
               type="button"
               onClick={handlePrint}
               id="btn-print-report"
-              title="Abrir cuadro de diálogo de impresión del navegador o Guardar como PDF"
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-600/25 transition-all"
+              title="Abrir cuadro de diálogo de impresión directa del navegador"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-slate-800 dark:text-slate-200 font-bold text-xs sm:text-sm border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
             >
-              <Printer className="w-4 h-4 stroke-[2.5]" />
-              <span>Imprimir / PDF</span>
+              <Printer className="w-4 h-4 stroke-[2]" />
+              <span>Imprimir</span>
             </button>
 
             {canExportReports && (

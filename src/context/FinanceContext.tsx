@@ -1,8 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { Account, AutoBudgetRule, Budget, BudgetCutSuggestion, Category, CurrencyCode, RecurringBill, SavingsGoal, ThemeMode, Transaction, TransactionTemplate } from '../types/finance';
 import { DEFAULT_CATEGORIES } from '../data/categories';
 import { INITIAL_ACCOUNTS, INITIAL_GOALS, INITIAL_RECURRING, INITIAL_TEMPLATES, generateSeedBudgets, generateSeedTransactions } from '../data/seedData';
 import { getCurrentMonthPeriod, setGlobalPrivacyMode } from '../utils/format';
+import {
+  applyTransactionToAccounts,
+  applyTransactionUpdateToAccounts,
+  applyTransactionDeletionToAccounts,
+  calculateNetWorth,
+  calculatePeriodMetrics,
+  auditAccountIntegrity,
+} from '../utils/financialCalculations';
 import { useUser } from './UserContext';
 
 interface FinanceContextType {
@@ -19,6 +27,19 @@ interface FinanceContextType {
   selectedPeriod: string; // YYYY-MM
   theme: ThemeMode;
   effectiveTheme: 'light' | 'dark';
+  
+  // Auditoría y Reconciliación del Libro Mayor
+  auditLedger: () => {
+    isHealthy: boolean;
+    discrepancies: Array<{
+      accountId: string;
+      accountName: string;
+      currentBalance: number;
+      ledgerBalance: number;
+      discrepancy: number;
+    }>;
+  };
+  reconcileAccountsWithLedger: () => { reconciledCount: number };
   
   // Modo Espía / Privacidad en lugares públicos
   privacyMode: boolean;
@@ -145,7 +166,7 @@ const DEFAULT_AUTO_BUDGET_RULES: AutoBudgetRule[] = [
 ];
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser, logAction } = useUser();
+  const { currentUser, logAction, hasPermission } = useUser();
   const [selectedPeriod, setSelectedPeriod] = useState<string>(getCurrentMonthPeriod());
   const [currency, setCurrencyState] = useState<CurrencyCode>(() => {
     return (localStorage.getItem(STORAGE_KEYS.CURRENCY) as CurrencyCode) || 'EUR';
@@ -464,6 +485,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Acciones de Transacciones
   const addTransaction = (data: Omit<Transaction, 'id'>) => {
+    if (!hasPermission('canCreateTransactions')) {
+      throw new Error('No tienes permisos suficientes para registrar transacciones en este rol.');
+    }
+
     const newTx: Transaction = {
       ...data,
       id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -473,24 +498,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setTransactions(prev => [newTx, ...prev]);
 
-    // Actualizar balance de cuentas
-    setAccounts(prev => prev.map(acc => {
-      if (data.type === 'expense' && acc.id === data.accountId) {
-        return { ...acc, balance: acc.balance - data.amount };
-      }
-      if (data.type === 'income' && acc.id === data.accountId) {
-        return { ...acc, balance: acc.balance + data.amount };
-      }
-      if (data.type === 'transfer') {
-        if (acc.id === data.accountId) {
-          return { ...acc, balance: acc.balance - data.amount };
-        }
-        if (acc.id === data.toAccountId) {
-          return { ...acc, balance: acc.balance + data.amount };
-        }
-      }
-      return acc;
-    }));
+    // Actualizar balance de cuentas de forma pura y atómica en céntimos
+    setAccounts(prev => applyTransactionToAccounts(prev, newTx));
 
     const catName = categories.find(c => c.id === data.categoryId)?.name || 'Sin categoría';
     const accName = accounts.find(a => a.id === data.accountId)?.name || 'Cuenta';
@@ -515,35 +524,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const updateTransaction = (id: string, updated: Partial<Transaction>) => {
+    if (!hasPermission('canEditTransactions')) {
+      throw new Error('No tienes permisos suficientes para modificar transacciones en este rol.');
+    }
     const oldTx = transactions.find(t => t.id === id);
     if (!oldTx) return;
 
-    // Revertir efecto previo en cuentas
-    setAccounts(prev => prev.map(acc => {
-      let balance = acc.balance;
-      if (oldTx.type === 'expense' && acc.id === oldTx.accountId) balance += oldTx.amount;
-      if (oldTx.type === 'income' && acc.id === oldTx.accountId) balance -= oldTx.amount;
-      if (oldTx.type === 'transfer') {
-        if (acc.id === oldTx.accountId) balance += oldTx.amount;
-        if (acc.id === oldTx.toAccountId) balance -= oldTx.amount;
-      }
-      return { ...acc, balance };
-    }));
-
     const finalTx = { ...oldTx, ...updated };
 
-    // Aplicar nuevo efecto
-    setAccounts(prev => prev.map(acc => {
-      let balance = acc.balance;
-      if (finalTx.type === 'expense' && acc.id === finalTx.accountId) balance -= finalTx.amount;
-      if (finalTx.type === 'income' && acc.id === finalTx.accountId) balance += finalTx.amount;
-      if (finalTx.type === 'transfer') {
-        if (acc.id === finalTx.accountId) balance -= finalTx.amount;
-        if (acc.id === finalTx.toAccountId) balance += finalTx.amount;
-      }
-      return { ...acc, balance };
-    }));
-
+    // Actualizar balances atómicamente revirtiendo oldTx y aplicando finalTx con aritmética exacta
+    setAccounts(prev => applyTransactionUpdateToAccounts(prev, oldTx, finalTx));
     setTransactions(prev => prev.map(t => t.id === id ? finalTx : t));
 
     logAction({
@@ -560,21 +550,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteTransaction = (id: string) => {
+    if (!hasPermission('canDeleteTransactions')) {
+      throw new Error('No tienes permisos suficientes para eliminar transacciones en este rol.');
+    }
     const tx = transactions.find(t => t.id === id);
     if (!tx) return;
 
-    // Revertir efecto en balance
-    setAccounts(prev => prev.map(acc => {
-      let balance = acc.balance;
-      if (tx.type === 'expense' && acc.id === tx.accountId) balance += tx.amount;
-      if (tx.type === 'income' && acc.id === tx.accountId) balance -= tx.amount;
-      if (tx.type === 'transfer') {
-        if (acc.id === tx.accountId) balance += tx.amount;
-        if (acc.id === tx.toAccountId) balance -= tx.amount;
-      }
-      return { ...acc, balance };
-    }));
-
+    // Revertir efecto de la transacción eliminada de forma exacta en céntimos
+    setAccounts(prev => applyTransactionDeletionToAccounts(prev, tx));
     setTransactions(prev => prev.filter(t => t.id !== id));
 
     const catName = categories.find(c => c.id === tx.categoryId)?.name || 'Sin categoría';
@@ -595,6 +578,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Acciones de Cuentas
   const addAccount = (accountData: Omit<Account, 'id'>) => {
+    if (!hasPermission('canManageAccounts')) {
+      throw new Error('No tienes permisos suficientes para crear cuentas patrimoniales.');
+    }
     const newAcc: Account = {
       ...accountData,
       id: `acc-${Date.now()}`,
@@ -617,6 +603,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const updateAccount = (id: string, updated: Partial<Account>) => {
+    if (!hasPermission('canManageAccounts')) {
+      throw new Error('No tienes permisos suficientes para actualizar cuentas patrimoniales.');
+    }
     const existing = accounts.find(a => a.id === id);
     setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
 
@@ -634,6 +623,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteAccount = (id: string) => {
+    if (!hasPermission('canManageAccounts')) {
+      throw new Error('No tienes permisos suficientes para eliminar cuentas patrimoniales.');
+    }
     const existing = accounts.find(a => a.id === id);
     setAccounts(prev => prev.filter(a => a.id !== id));
 
@@ -716,6 +708,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     alertThreshold: number = 85,
     autoRenew: boolean = true
   ) => {
+    if (!hasPermission('canManageBudgets')) {
+      throw new Error('No tienes permisos suficientes para configurar presupuestos.');
+    }
     setBudgets(prev => {
       const existingIndex = prev.findIndex(b => b.categoryId === categoryId && b.period === selectedPeriod);
       if (existingIndex >= 0) {
@@ -778,6 +773,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteBudget = (id: string) => {
+    if (!hasPermission('canManageBudgets')) {
+      throw new Error('No tienes permisos suficientes para eliminar presupuestos.');
+    }
     const budgetToDelete = budgets.find(b => b.id === id);
     if (budgetToDelete) {
       const catName = categories.find(c => c.id === budgetToDelete.categoryId)?.name || 'Categoría';
@@ -868,6 +866,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Metas de Ahorro
   const addGoal = (data: Omit<SavingsGoal, 'id'>) => {
+    if (!hasPermission('canManageGoals')) {
+      throw new Error('No tienes permisos suficientes para crear metas de ahorro.');
+    }
     const newGoal: SavingsGoal = {
       ...data,
       id: `goal-${Date.now()}`,
@@ -889,10 +890,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const updateGoal = (id: string, updated: Partial<SavingsGoal>) => {
+    if (!hasPermission('canManageGoals')) {
+      throw new Error('No tienes permisos suficientes para modificar metas de ahorro.');
+    }
     setGoals(prev => prev.map(g => g.id === id ? { ...g, ...updated } : g));
   };
 
   const contributeToGoal = (id: string, amount: number, fromAccountId?: string) => {
+    if (!hasPermission('canManageGoals')) {
+      throw new Error('No tienes permisos suficientes para aportar a metas de ahorro.');
+    }
     const targetGoal = goals.find(g => g.id === id);
     setGoals(prev => prev.map(g => {
       if (g.id === id) {
@@ -928,6 +935,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const deleteGoal = (id: string) => {
+    if (!hasPermission('canManageGoals')) {
+      throw new Error('No tienes permisos suficientes para eliminar metas de ahorro.');
+    }
     const targetGoal = goals.find(g => g.id === id);
     setGoals(prev => prev.filter(g => g.id !== id));
 
@@ -1161,50 +1171,62 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  // Métricas calculadas
-  const metrics = useMemo(() => {
-    // Activos vs Pasivos
-    let totalAssets = 0;
-    let totalLiabilities = 0;
+  // Auditoría y Reconciliación del Libro Mayor
+  const auditLedger = useCallback(() => {
+    return auditAccountIntegrity(accounts, transactions);
+  }, [accounts, transactions]);
 
-    accounts.forEach(acc => {
-      if (acc.balance >= 0) {
-        totalAssets += acc.balance;
-      } else {
-        totalLiabilities += Math.abs(acc.balance);
-      }
+  const reconcileAccountsWithLedger = useCallback(() => {
+    const audit = auditAccountIntegrity(accounts, transactions);
+    if (audit.isHealthy) return { reconciledCount: 0 };
+
+    setAccounts(prevAccounts => {
+      return prevAccounts.map(acc => {
+        const discrepancy = audit.discrepancies.find(d => d.accountId === acc.id);
+        if (discrepancy) {
+          return {
+            ...acc,
+            balance: discrepancy.ledgerBalance,
+          };
+        }
+        return acc;
+      });
     });
 
-    const totalNetWorth = totalAssets - totalLiabilities;
+    logAction({
+      action: 'ACCOUNTS_RECONCILED',
+      category: 'cuentas',
+      title: 'Conciliación del Libro Mayor',
+      description: `Se recalcularon los saldos de ${audit.discrepancies.length} cuentas a partir del historial verificado de transacciones.`,
+      severity: 'info',
+    });
 
-    // Periodo actual
-    const currentTxs = transactions.filter(t => t.date.startsWith(selectedPeriod));
-    const currentMonthIncome = currentTxs
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
+    return { reconciledCount: audit.discrepancies.length };
+  }, [accounts, transactions, logAction]);
 
-    const currentMonthExpense = currentTxs
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
+  // Métricas calculadas con precisión atómica en céntimos
+  const metrics = useMemo(() => {
+    // Activos vs Pasivos calculados con el motor financiero
+    const netWorthData = calculateNetWorth(accounts);
+    const { totalAssets, totalLiabilities, totalNetWorth } = netWorthData;
 
-    const currentMonthNet = currentMonthIncome - currentMonthExpense;
-    const savingsRate = currentMonthIncome > 0
-      ? Math.max(0, Math.round((currentMonthNet / currentMonthIncome) * 100))
-      : 0;
+    // Periodo actual calculado con el motor financiero
+    const currentMetrics = calculatePeriodMetrics(transactions, selectedPeriod);
+    const {
+      income: currentMonthIncome,
+      expense: currentMonthExpense,
+      net: currentMonthNet,
+      savingsRate,
+    } = currentMetrics;
 
     // Periodo anterior para comparativas
     const [currY, currM] = selectedPeriod.split('-').map(Number);
     const prevDate = new Date(currY, currM - 2, 1);
     const prevPeriod = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
-    const prevTxs = transactions.filter(t => t.date.startsWith(prevPeriod));
-    const previousMonthIncome = prevTxs
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const previousMonthExpense = prevTxs
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
+    const prevMetrics = calculatePeriodMetrics(transactions, prevPeriod);
+    const previousMonthIncome = prevMetrics.income;
+    const previousMonthExpense = prevMetrics.expense;
 
     const expenseDiffPercent = previousMonthExpense > 0
       ? Math.round(((currentMonthExpense - previousMonthExpense) / previousMonthExpense) * 100)
@@ -1255,7 +1277,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       expenseDiffPercent,
       financialHealthScore,
     };
-  }, [accounts, transactions, selectedPeriod, budgets]);
+  }, [accounts, transactions, selectedPeriod, budgets, currency]);
 
   // Análisis y Sugerencias del Modo de Ahorro Extremo
   const extremeSavingsAnalysis = useMemo(() => {
@@ -1426,6 +1448,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         applyAllExtremeBudgetSuggestions,
         applyExtremeBudgetCutForCategory,
         restoreBudgetsBeforeExtremeSavings,
+        auditLedger,
+        reconcileAccountsWithLedger,
         setSelectedPeriod,
         setCurrency,
         setTheme,

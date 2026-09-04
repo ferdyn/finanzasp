@@ -12,6 +12,8 @@ export interface SecurityConfig {
   webAuthnCredentialId: string | null;
   autoLockTimeout: 'immediate' | '1m' | '5m' | '15m' | 'launch_only';
   lastActiveTimestamp: number;
+  recoveryKeyHash?: string | null;
+  recoveryKeySalt?: string | null;
 }
 
 const SECURITY_STORAGE_KEY = 'finantrack_security_config_v1';
@@ -21,13 +23,24 @@ const LOCKOUT_TIMESTAMP_KEY = 'finantrack_security_lockout_until';
 export const MAX_FAILED_ATTEMPTS = 5;
 export const LOCKOUT_DURATION_MS = 30 * 1000; // 30 segundos tras 5 intentos fallidos
 
+function getCrypto(): Crypto | null {
+  if (typeof window !== 'undefined' && window.crypto) {
+    return window.crypto;
+  }
+  if (typeof globalThis !== 'undefined' && globalThis.crypto) {
+    return globalThis.crypto as Crypto;
+  }
+  return null;
+}
+
 /**
  * Genera una sal criptográficamente segura aleatoria en formato hex.
  */
 export function generateSalt(length = 16): string {
-  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+  const cryptoObj = getCrypto();
+  if (cryptoObj && cryptoObj.getRandomValues) {
     const array = new Uint8Array(length);
-    window.crypto.getRandomValues(array);
+    cryptoObj.getRandomValues(array);
     return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
   }
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -37,7 +50,8 @@ export function generateSalt(length = 16): string {
  * Genera el hash criptográfico SHA-256 de un PIN con sal utilizando Web Crypto API.
  */
 export async function hashPin(pin: string, salt: string): Promise<string> {
-  if (typeof window === 'undefined' || !window.crypto?.subtle) {
+  const cryptoObj = getCrypto();
+  if (!cryptoObj?.subtle) {
     // Fallback básico si Web Crypto Subtle no estuviese disponible
     let hash = 0;
     const str = `${salt}:${pin}`;
@@ -50,9 +64,60 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
 
   const encoder = new TextEncoder();
   const data = encoder.encode(`finantrack_salt_${salt}:${pin}`);
-  const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+  const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Genera una Clave Maestra de Recuperación de Seguridad aleatoria de alta entropía.
+ * Formato: RECOVER-XXXX-XXXX (alfanumérico sin caracteres ambiguos)
+ */
+export function generateRecoveryKey(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let p1 = '';
+  let p2 = '';
+  for (let i = 0; i < 4; i++) {
+    p1 += chars.charAt(Math.floor(Math.random() * chars.length));
+    p2 += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `RECOVER-${p1}-${p2}`;
+}
+
+/**
+ * Genera el hash criptográfico SHA-256 de una Clave Maestra de Recuperación con sal.
+ */
+export async function hashRecoveryKey(key: string, salt: string): Promise<string> {
+  const normalized = key.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const cryptoObj = getCrypto();
+  if (!cryptoObj?.subtle) {
+    let hash = 0;
+    const str = `${salt}:recovery:${normalized}`;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return `rec_${Math.abs(hash).toString(16)}`;
+  }
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`finantrack_recovery_${salt}:${normalized}`);
+  const hashBuffer = await cryptoObj.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Verifica si la clave de recuperación introducida coincide con el hash guardado.
+ */
+export async function verifyRecoveryKey(
+  enteredKey: string,
+  storedHash: string | null | undefined,
+  salt: string | null | undefined
+): Promise<boolean> {
+  if (!storedHash || !salt || !enteredKey) return false;
+  const computedHash = await hashRecoveryKey(enteredKey, salt);
+  return computedHash === storedHash;
 }
 
 /**

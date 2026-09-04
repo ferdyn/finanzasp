@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { useUser } from '../context/UserContext';
 import { formatMoney } from '../utils/format';
@@ -8,7 +8,8 @@ import { DigitalCardsSection } from '../components/DigitalCardsSection';
 import { 
   Landmark, Plus, TrendingUp, ShieldAlert, ArrowUpRight, 
   CreditCard, PiggyBank, Banknote, Coins, Calculator, 
-  Edit3, ArrowRightLeft, PieChart as PieIcon, Layers
+  Edit3, ArrowRightLeft, PieChart as PieIcon, Layers,
+  FileCheck, CheckCircle2, AlertTriangle, RotateCcw, X
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -25,9 +26,26 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
   onOpenCompoundSimulator,
   onOpenSecurityPinPrompt,
 }) => {
-  const { accounts, metrics, currency } = useFinance();
+  const { accounts, metrics, currency, auditLedger, reconcileAccountsWithLedger } = useFinance();
   const { hasPermission } = useUser();
   const canEditAccounts = hasPermission('canManageAccounts');
+
+  const [showAuditModal, setShowAuditModal] = useState<boolean>(false);
+  const [auditReport, setAuditReport] = useState<ReturnType<typeof auditLedger> | null>(null);
+  const [reconcileSuccessMsg, setReconcileSuccessMsg] = useState<string>('');
+
+  const handleRunAudit = () => {
+    const report = auditLedger();
+    setAuditReport(report);
+    setShowAuditModal(true);
+    setReconcileSuccessMsg('');
+  };
+
+  const handleReconcile = () => {
+    const res = reconcileAccountsWithLedger();
+    setReconcileSuccessMsg(`Se han recalculado y conciliado ${res.reconciledCount} cuentas correctamente.`);
+    setAuditReport(auditLedger());
+  };
 
   const assetAccounts = accounts.filter(a => a.balance >= 0);
   const liabilityAccounts = accounts.filter(a => a.balance < 0 || a.type === 'credit' || a.type === 'debt');
@@ -81,10 +99,19 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleRunAudit}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+            title="Verificar consistencia matemática entre saldos y libro mayor"
+          >
+            <FileCheck className="w-4 h-4 text-emerald-500" />
+            <span>Auditar Libro Mayor</span>
+          </button>
+
           <button
             onClick={onOpenCompoundSimulator}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs sm:text-sm font-semibold transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
           >
             <Calculator className="w-4 h-4" />
             <span>Simulador de Interés</span>
@@ -93,7 +120,7 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
           {canEditAccounts && (
             <button
               onClick={() => onOpenAccountModal()}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all hover:scale-105 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Nueva Cuenta</span>
@@ -348,6 +375,122 @@ export const NetWorthView: React.FC<NetWorthViewProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de Auditoría y Conciliación del Libro Mayor */}
+      {showAuditModal && auditReport && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+        >
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-5 shadow-2xl text-slate-900 dark:text-white">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                  auditReport.isHealthy
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                }`}>
+                  {auditReport.isHealthy ? (
+                    <CheckCircle2 className="w-5 h-5" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    Auditoría del Libro Mayor
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Verificación matemática de saldos contra transacciones
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAuditModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {reconcileSuccessMsg && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                {reconcileSuccessMsg}
+              </div>
+            )}
+
+            {auditReport.isHealthy ? (
+              <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 text-center space-y-2">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                  Libro Mayor 100% Consistente
+                </h4>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                  Todos los saldos de tus cuentas coinciden exactamente con la suma aritmética del saldo inicial más cada ingreso, gasto y transferencia registrada. Cero discrepancias detectadas.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3.5 text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Descuadres detectados:</span> Se encontraron diferencias en {auditReport.discrepancies.length} cuenta(s) respecto al histórico de transacciones.
+                  </div>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                  {auditReport.discrepancies.map(d => (
+                    <div
+                      key={d.accountId}
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-xs flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-800 dark:text-slate-200">
+                          {d.accountName}
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          Saldo actual: <span className="font-mono">{formatMoney(d.currentBalance, currency)}</span> · Libro mayor: <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{formatMoney(d.ledgerBalance, currency)}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-mono font-bold text-rose-500">
+                          {d.discrepancy > 0 ? `+${formatMoney(d.discrepancy, currency)}` : formatMoney(d.discrepancy, currency)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {canEditAccounts && (
+                  <button
+                    type="button"
+                    onClick={handleReconcile}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-98 text-white text-xs font-bold shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Conciliar Cuentas con Libro Mayor</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAuditModal(false)}
+                className="py-2 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

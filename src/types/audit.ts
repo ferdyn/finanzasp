@@ -21,6 +21,7 @@ export type AuditActionType =
   | 'ACCOUNT_CREATED'
   | 'ACCOUNT_UPDATED'
   | 'ACCOUNT_DELETED'
+  | 'ACCOUNTS_RECONCILED'
   // Presupuestos
   | 'BUDGET_CREATED'
   | 'BUDGET_UPDATED'

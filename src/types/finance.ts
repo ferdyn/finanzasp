@@ -38,6 +38,7 @@ export interface Account {
   accountNumber?: string;
   isHidden?: boolean;
   creditLimit?: number; // Para tarjetas de crédito
+  initialBalance?: number; // Saldo de apertura contable para reconstrucción y auditoría del Libro Mayor
 }
 
 export interface Transaction {

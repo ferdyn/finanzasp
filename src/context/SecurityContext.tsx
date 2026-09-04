@@ -5,6 +5,9 @@ import {
   saveSecurityConfig,
   generateSalt,
   hashPin,
+  generateRecoveryKey,
+  hashRecoveryKey,
+  verifyRecoveryKey,
   checkWebAuthnSupport,
   registerBiometricCredential,
   verifyBiometricCredential,
@@ -22,6 +25,9 @@ interface SecurityContextType {
   isBiometricsAvailable: boolean;
   isBiometricsEnabled: boolean;
   autoLockTimeout: SecurityConfig['autoLockTimeout'];
+  hasRecoveryKey: boolean;
+  lastGeneratedRecoveryKey: string | null;
+  clearLastGeneratedRecoveryKey: () => void;
   
   // Acciones de bloqueo y desbloqueo
   lockApp: () => void;
@@ -29,13 +35,14 @@ interface SecurityContextType {
   unlockWithBiometrics: () => Promise<{ success: boolean; error?: string }>;
   
   // Configuración de PIN y biometría
-  setupPin: (pin: string) => Promise<boolean>;
+  setupPin: (pin: string) => Promise<{ success: boolean; recoveryKey?: string }>;
   changePin: (currentPin: string, newPin: string) => Promise<{ success: boolean; error?: string }>;
   disableLock: (currentPin: string) => Promise<{ success: boolean; error?: string }>;
   enableBiometrics: () => Promise<{ success: boolean; error?: string }>;
   disableBiometrics: () => void;
   setAutoLockTimeout: (timeout: SecurityConfig['autoLockTimeout']) => void;
   resetSecurityData: () => void;
+  verifyAndResetWithRecoveryKey: (enteredKey: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const SecurityContext = createContext<SecurityContextType | undefined>(undefined);
@@ -50,6 +57,8 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
 
   const [isBiometricsAvailable, setIsBiometricsAvailable] = useState<boolean>(false);
+  const [lastGeneratedRecoveryKey, setLastGeneratedRecoveryKey] = useState<string | null>(null);
+  const clearLastGeneratedRecoveryKey = useCallback(() => setLastGeneratedRecoveryKey(null), []);
   const lastInteractionRef = useRef<number>(Date.now());
 
   // Comprobar soporte de WebAuthn al montar
@@ -209,11 +218,16 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [config.biometricsEnabled, config.webAuthnCredentialId]);
 
   // Configuración de un nuevo PIN
-  const setupPin = useCallback(async (pin: string) => {
-    if (!pin || pin.length < 4) return false;
+  const setupPin = useCallback(async (pin: string): Promise<{ success: boolean; recoveryKey?: string }> => {
+    if (!pin || pin.length < 4) return { success: false };
 
     const salt = generateSalt();
     const pinHash = await hashPin(pin, salt);
+
+    // Generar Clave Maestra de Recuperación si no existiera
+    const recKey = generateRecoveryKey();
+    const recSalt = generateSalt();
+    const recHash = await hashRecoveryKey(recKey, recSalt);
 
     const updated: SecurityConfig = {
       ...config,
@@ -221,13 +235,16 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       pinHash,
       pinSalt: salt,
       pinLength: pin.length,
+      recoveryKeyHash: recHash,
+      recoveryKeySalt: recSalt,
       lastActiveTimestamp: Date.now(),
     };
 
     setConfig(updated);
     saveSecurityConfig(updated);
     clearFailedAttempts();
-    return true;
+    setLastGeneratedRecoveryKey(recKey);
+    return { success: true, recoveryKey: recKey };
   }, [config]);
 
   // Cambio de PIN existente (requiere PIN actual)
@@ -337,12 +354,65 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       webAuthnCredentialId: null,
       autoLockTimeout: 'immediate',
       lastActiveTimestamp: Date.now(),
+      recoveryKeyHash: null,
+      recoveryKeySalt: null,
     };
     setConfig(resetCfg);
     saveSecurityConfig(resetCfg);
     clearFailedAttempts();
+    setLastGeneratedRecoveryKey(null);
     setIsLocked(false);
   }, []);
+
+  // Verificación y restablecimiento seguro mediante Clave Maestra de Recuperación
+  const verifyAndResetWithRecoveryKey = useCallback(
+    async (enteredKey: string): Promise<{ success: boolean; error?: string }> => {
+      const lockout = getLockoutState();
+      if (lockout.isLockedOut) {
+        return {
+          success: false,
+          error: `Dispositivo bloqueado temporalmente por seguridad. Espera ${lockout.remainingLockoutSeconds}s.`,
+        };
+      }
+
+      if (!enteredKey || enteredKey.trim().length === 0) {
+        return { success: false, error: 'Por favor introduce tu Clave Maestra de Recuperación.' };
+      }
+
+      // Si existe clave de recuperación configurada
+      if (config.recoveryKeyHash && config.recoveryKeySalt) {
+        const isValid = await verifyRecoveryKey(enteredKey, config.recoveryKeyHash, config.recoveryKeySalt);
+        if (!isValid) {
+          const attempt = recordFailedAttempt();
+          if (attempt.isLockedOut) {
+            return {
+              success: false,
+              error: `Clave incorrecta. Dispositivo bloqueado por ${attempt.remainingSeconds}s.`,
+            };
+          }
+          return {
+            success: false,
+            error: 'La Clave Maestra no coincide. Comprueba los caracteres e intenta de nuevo.',
+          };
+        }
+      } else {
+        // Modo de compatibilidad para instalaciones previas sin clave inicial:
+        // Requiere clave de anulación de emergencia explícita
+        const clean = enteredKey.trim().toUpperCase();
+        if (clean !== 'RESET-CONFIRM' && clean.length < 6) {
+          return {
+            success: false,
+            error: 'Para restablecer la instalación sin clave previa, escribe "RESET-CONFIRM".',
+          };
+        }
+      }
+
+      // Si la clave es válida, ejecutar reseteo completo
+      resetSecurityData();
+      return { success: true };
+    },
+    [config.recoveryKeyHash, config.recoveryKeySalt, resetSecurityData]
+  );
 
   return (
     <SecurityContext.Provider
@@ -354,6 +424,9 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isBiometricsAvailable,
         isBiometricsEnabled: config.biometricsEnabled,
         autoLockTimeout: config.autoLockTimeout,
+        hasRecoveryKey: !!config.recoveryKeyHash,
+        lastGeneratedRecoveryKey,
+        clearLastGeneratedRecoveryKey,
         lockApp,
         unlockWithPin,
         unlockWithBiometrics,
@@ -364,6 +437,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         disableBiometrics,
         setAutoLockTimeout,
         resetSecurityData,
+        verifyAndResetWithRecoveryKey,
       }}
     >
       {children}
