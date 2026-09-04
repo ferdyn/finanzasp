@@ -138,12 +138,12 @@ export function hashRecoveryKeySync(key: string, salt: string): string {
   return `pbkdf2_rec$${derived.toString('hex')}`;
 }
 
-const envRecoverySalt = process.env.RECOVERY_KEY_SALT || '';
-const envRecoveryKey = process.env.MASTER_RECOVERY_KEY || '';
+const envRecoveryKey = (process.env.MASTER_RECOVERY_KEY || '').trim();
+const resolvedInitialSalt = (process.env.RECOVERY_KEY_SALT || '').trim() || (envRecoveryKey ? crypto.randomBytes(16).toString('hex') : '');
 
 export let serverRecoveryConfig: { salt: string; hash: string | null } = {
-  salt: envRecoverySalt || (envRecoveryKey ? crypto.randomBytes(16).toString('hex') : ''),
-  hash: envRecoveryKey ? hashRecoveryKeySync(envRecoveryKey, envRecoverySalt || crypto.randomBytes(16).toString('hex')) : null,
+  salt: envRecoveryKey ? resolvedInitialSalt : '',
+  hash: envRecoveryKey ? hashRecoveryKeySync(envRecoveryKey, resolvedInitialSalt) : null,
 };
 
 export function setServerRecoveryConfig(key: string | null, salt?: string) {

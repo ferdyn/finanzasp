@@ -6,9 +6,28 @@ import {
   hashRecoveryKey,
   verifyRecoveryKey,
   verifyPin,
+  generateSecureId,
+  generateSecureRandomNumber,
 } from './security';
 
 describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => {
+  it('generates secure random IDs with cryptographic bytes and rejects predictable patterns', () => {
+    const id1 = generateSecureId('tx', 8);
+    const id2 = generateSecureId('tx', 8);
+
+    expect(id1).toMatch(/^tx-\d+-[a-f0-9]{16}$/);
+    expect(id2).toMatch(/^tx-\d+-[a-f0-9]{16}$/);
+    expect(id1).not.toBe(id2);
+  });
+
+  it('generates secure random integers within the requested range strictly', () => {
+    for (let i = 0; i < 50; i++) {
+      const num = generateSecureRandomNumber(10, 20);
+      expect(num).toBeGreaterThanOrEqual(10);
+      expect(num).toBeLessThanOrEqual(20);
+      expect(Number.isInteger(num)).toBe(true);
+    }
+  });
   it('generates unique salts with correct hex length', () => {
     const salt1 = generateSalt(16);
     const salt2 = generateSalt(16);

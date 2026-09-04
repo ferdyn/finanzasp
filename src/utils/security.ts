@@ -49,6 +49,7 @@ export function generateSalt(length = 16): string {
 /**
  * Genera un identificador único seguro basado en timestamp y bytes criptográficos aleatorios.
  * Reemplaza de forma segura Math.random() para IDs de transacciones, logs y entidades.
+ * Falla de forma estricta si Web Crypto no está disponible (sin fallbacks inseguros).
  */
 export function generateSecureId(prefix = 'id', byteLength = 4): string {
   const cryptoObj = getCrypto();
@@ -58,11 +59,12 @@ export function generateSecureId(prefix = 'id', byteLength = 4): string {
     const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
     return `${prefix}-${Date.now()}-${hex}`;
   }
-  return `${prefix}-${Date.now()}`;
+  throw new Error('Web Crypto API no disponible para generación segura de IDs.');
 }
 
 /**
  * Genera un número entero aleatorio criptográficamente seguro en el rango [min, max].
+ * Falla de forma estricta si Web Crypto no está disponible (sin fallbacks inseguros).
  */
 export function generateSecureRandomNumber(min: number, max: number): number {
   const cryptoObj = getCrypto();
@@ -72,7 +74,7 @@ export function generateSecureRandomNumber(min: number, max: number): number {
     const fraction = uint32[0] / 0x100000000;
     return Math.floor(min + fraction * (max - min + 1));
   }
-  return min;
+  throw new Error('Web Crypto API no disponible para generación segura de números aleatorios.');
 }
 
 /**
