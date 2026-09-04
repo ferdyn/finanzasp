@@ -39,8 +39,8 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
   });
 
   it('hashes PIN deterministically with given salt', async () => {
-    const salt = '1234567890abcdef1234567890abcdef';
-    const pin = '1234';
+    const salt = '9876543210abcdef9876543210abcdef';
+    const pin = '8392';
 
     const hash1 = await hashPin(pin, salt);
     const hash2 = await hashPin(pin, salt);
@@ -50,8 +50,8 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
   });
 
   it('produces distinct hashes for different PINs with identical salt', async () => {
-    const salt = 'constant_salt_for_testing_123456';
-    const hashA = await hashPin('1234', salt);
+    const salt = 'constant_salt_for_testing_987654';
+    const hashA = await hashPin('8392', salt);
     const hashB = await hashPin('4321', salt);
 
     expect(hashA).not.toBe(hashB);
@@ -237,6 +237,51 @@ describe('Security Utilities — Master Recovery Key & PIN Cryptography', () => 
 
     // Step 5: If an attacker attempts to inject/replay the raw old legacy hash string against the modern stored config, it fails
     const isReplayValid = await verifyPin(legacyHash, currentStoredConfig.pinHash, currentStoredConfig.pinSalt);
+    expect(isReplayValid).toBe(false);
+  });
+
+  it('demonstrates stateful migration cycle for recovery key: legacy accepted once -> rehashed to PBKDF2 -> stored state updated -> legacy rejected', async () => {
+    const legacySalt = 'stateful-rec-salt-legacy';
+    const recoveryKey = 'RECOVER-2345-6789-ABCD-EFGH';
+    const normalized = recoveryKey.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    const cryptoObj = globalThis.crypto;
+    const encoder = new TextEncoder();
+    const legacyBuffer = await cryptoObj.subtle.digest(
+      'SHA-256',
+      encoder.encode(`finantrack_recovery_${legacySalt}:${normalized}`)
+    );
+    const legacyHash = Array.from(new Uint8Array(legacyBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    let storedRecConfig = {
+      recoveryKeyHash: legacyHash,
+      recoveryKeySalt: legacySalt,
+    };
+
+    // 1. Detect legacy hash and verify input
+    expect(storedRecConfig.recoveryKeyHash.startsWith('pbkdf2_rec$')).toBe(false);
+    const isValid = await verifyRecoveryKey(recoveryKey, storedRecConfig.recoveryKeyHash, storedRecConfig.recoveryKeySalt);
+    expect(isValid).toBe(true);
+
+    // 2. Rehash to PBKDF2 and persist
+    const modernRecHash = await hashRecoveryKey(recoveryKey, storedRecConfig.recoveryKeySalt);
+    storedRecConfig = {
+      ...storedRecConfig,
+      recoveryKeyHash: modernRecHash,
+    };
+
+    // 3. Stored config now has pbkdf2_rec$ prefix
+    expect(storedRecConfig.recoveryKeyHash.startsWith('pbkdf2_rec$')).toBe(true);
+    expect(storedRecConfig.recoveryKeyHash).not.toBe(legacyHash);
+
+    // 4. Verification succeeds with modern PBKDF2
+    const isModernValid = await verifyRecoveryKey(recoveryKey, storedRecConfig.recoveryKeyHash, storedRecConfig.recoveryKeySalt);
+    expect(isModernValid).toBe(true);
+
+    // 5. Replay fails
+    const isReplayValid = await verifyRecoveryKey(legacyHash, storedRecConfig.recoveryKeyHash, storedRecConfig.recoveryKeySalt);
     expect(isReplayValid).toBe(false);
   });
 });

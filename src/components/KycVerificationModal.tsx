@@ -315,7 +315,7 @@ export const KycVerificationModal: React.FC<KycVerificationModalProps> = ({
                       setFormData({ ...formData, documentNumber: e.target.value });
                       if (inputErrors.documentNumber) setInputErrors({ ...inputErrors, documentNumber: '' });
                     }}
-                    placeholder="Ej. 12345678Z"
+                    placeholder="Ej. 98765432X"
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-mono font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 uppercase"
                   />
                   {inputErrors.documentNumber && (

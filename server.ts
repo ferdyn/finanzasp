@@ -116,14 +116,57 @@ export function verifyPinSync(pin: string, storedHash: string, salt: string): bo
   return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
 }
 
-// Almacén seguro de credenciales PBKDF2 para usuarios
-export const serverUserCredentials = new Map<string, ServerUserCredential>([
-  ['user-admin', { userId: 'user-admin', pinHash: hashPinSync('1234', 'salt-admin-sec'), pinSalt: 'salt-admin-sec' }],
-  ['user-manager', { userId: 'user-manager', pinHash: hashPinSync('1234', 'salt-manager-sec'), pinSalt: 'salt-manager-sec' }],
-  ['user-member', { userId: 'user-member', pinHash: hashPinSync('1234', 'salt-member-sec'), pinSalt: 'salt-member-sec' }],
-  ['user-viewer', { userId: 'user-viewer', pinHash: hashPinSync('1234', 'salt-viewer-sec'), pinSalt: 'salt-viewer-sec' }],
-  ['user-dependent', { userId: 'user-dependent', pinHash: hashPinSync('1234', 'salt-dep-sec'), pinSalt: 'salt-dep-sec' }],
-]);
+// Almacén seguro de credenciales PBKDF2 para usuarios.
+// En producción no existen usuarios ni PINs predeterminados/hardcodeados.
+export const serverUserCredentials = new Map<string, ServerUserCredential>();
+
+/**
+ * Verifica el PIN del usuario contra su credencial en serverUserCredentials.
+ * Si el usuario posee un hash legado SHA-256:
+ * 1. Verifica la credencial con el hash legado.
+ * 2. Si es válido, deriva inmediatamente un nuevo hash moderno PBKDF2 (100,000 iteraciones).
+ * 3. Persiste el nuevo hash en serverUserCredentials (almacenamiento real).
+ * 4. A partir de ese momento, el hash legado queda sobrescrito y deja de ser aceptado.
+ */
+export function verifyAndMigrateUserPinSync(
+  userId: string,
+  pin: string
+): boolean {
+  if (!userId || !pin) return false;
+  const creds = serverUserCredentials.get(userId);
+  if (!creds || !creds.pinHash || !creds.pinSalt) return false;
+
+  // 1. Hash moderno con PBKDF2
+  if (creds.pinHash.startsWith('pbkdf2$')) {
+    const computed = hashPinSync(pin, creds.pinSalt);
+    const bufA = Buffer.from(computed, 'utf8');
+    const bufB = Buffer.from(creds.pinHash, 'utf8');
+    return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  // 2. Detección y verificación de hash legado SHA-256
+  const legacyComputed = crypto
+    .createHash('sha256')
+    .update(`finantrack_salt_${creds.pinSalt}:${pin}`)
+    .digest('hex');
+  const bufA = Buffer.from(legacyComputed, 'utf8');
+  const bufB = Buffer.from(creds.pinHash, 'utf8');
+  const isLegacyValid = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+
+  if (isLegacyValid) {
+    // 3. Generar nuevo hash robusto PBKDF2 (100,000 iteraciones)
+    const modernHash = hashPinSync(pin, creds.pinSalt);
+    // 4. Persistir en el almacenamiento real de credenciales
+    serverUserCredentials.set(userId, {
+      ...creds,
+      pinHash: modernHash,
+    });
+    // 5. El hash legado ha sido sobrescrito en el almacenamiento y no se vuelve a aceptar
+    return true;
+  }
+
+  return false;
+}
 
 // Configuración de Clave Maestra de Recuperación Criptográfica (sin secretos hardcodeados)
 export function hashRecoveryKeySync(key: string, salt: string): string {
@@ -136,6 +179,52 @@ export function hashRecoveryKeySync(key: string, salt: string): string {
     'sha256'
   );
   return `pbkdf2_rec$${derived.toString('hex')}`;
+}
+
+/**
+ * Verifica la Clave Maestra de Recuperación.
+ * Si la configuración previa almacenaba un hash legado SHA-256:
+ * 1. Valida la clave con el formato legado.
+ * 2. Si es válida, deriva inmediatamente un hash PBKDF2 (100,000 iteraciones).
+ * 3. Persiste el nuevo hash en serverRecoveryConfig (almacenamiento real).
+ * 4. El hash antiguo deja de existir y nunca más se acepta.
+ */
+export function verifyAndMigrateRecoveryKeySync(recoveryKey: string): boolean {
+  if (!serverRecoveryConfig.hash || !serverRecoveryConfig.salt || !recoveryKey) {
+    return false;
+  }
+
+  // 1. Hash moderno PBKDF2
+  if (serverRecoveryConfig.hash.startsWith('pbkdf2_rec$')) {
+    const computedHash = hashRecoveryKeySync(recoveryKey, serverRecoveryConfig.salt);
+    const bufA = Buffer.from(computedHash, 'utf8');
+    const bufB = Buffer.from(serverRecoveryConfig.hash, 'utf8');
+    return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  // 2. Hash legado SHA-256
+  const normalized = recoveryKey.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const legacyComputed = crypto
+    .createHash('sha256')
+    .update(`finantrack_recovery_${serverRecoveryConfig.salt}:${normalized}`)
+    .digest('hex');
+  const bufA = Buffer.from(legacyComputed, 'utf8');
+  const bufB = Buffer.from(serverRecoveryConfig.hash, 'utf8');
+  const isLegacyValid = bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+
+  if (isLegacyValid) {
+    // 3. Generar nuevo hash PBKDF2
+    const modernHash = hashRecoveryKeySync(recoveryKey, serverRecoveryConfig.salt);
+    // 4. Persistir en almacenamiento real
+    serverRecoveryConfig = {
+      ...serverRecoveryConfig,
+      hash: modernHash,
+    };
+    // 5. Dejar de aceptar el hash legado
+    return true;
+  }
+
+  return false;
 }
 
 const envRecoveryKey = (process.env.MASTER_RECOVERY_KEY || '').trim();
@@ -345,12 +434,8 @@ export function createApp(): express.Express {
     if (isCallerAdmin) {
       isAuthenticated = true;
     } else {
-      const userCreds = serverUserCredentials.get(requestedUserId);
-
-      // Verificación de credencial contra hash seguro en servidor
-      if (pin && userCreds && verifyPinSync(String(pin), userCreds.pinHash, userCreds.pinSalt)) {
-        isAuthenticated = true;
-      } else if (password && userCreds && verifyPinSync(String(password), userCreds.pinHash, userCreds.pinSalt)) {
+      const credential = String(pin || password || '');
+      if (credential && verifyAndMigrateUserPinSync(requestedUserId, credential)) {
         isAuthenticated = true;
       }
     }
@@ -506,16 +591,7 @@ export function createApp(): express.Express {
     if (hasAdminSession) {
       isRecoveryAuthorized = true;
     } else if (serverRecoveryConfig.hash && typeof recoveryKey === 'string' && recoveryKey.trim().length > 0) {
-      try {
-        const computedHash = hashRecoveryKeySync(recoveryKey, serverRecoveryConfig.salt);
-        const bufA = Buffer.from(computedHash, 'utf8');
-        const bufB = Buffer.from(serverRecoveryConfig.hash, 'utf8');
-        if (bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB)) {
-          isRecoveryAuthorized = true;
-        }
-      } catch {
-        isRecoveryAuthorized = false;
-      }
+      isRecoveryAuthorized = verifyAndMigrateRecoveryKeySync(recoveryKey);
     }
 
     if (!isRecoveryAuthorized) {

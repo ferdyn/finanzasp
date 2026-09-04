@@ -1,18 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
+import crypto from 'crypto';
 import {
   createApp,
   ipLockoutState,
   serverAuditLogs,
   activeSessions,
   serverUserRegistry,
+  serverUserCredentials,
   serverRecoveryConfig,
   setServerRecoveryConfig,
   activeWebAuthnChallenges,
   serverWebAuthnCredentials,
+  hashPinSync,
 } from '../server';
 
 const TEST_MASTER_RECOVERY_KEY = 'RECOVER-7K9M-3X2P-8W4Q-M7K2';
+const TEST_FIXTURE_PIN = '8492';
 
 describe('FinanTrack Server Security & Integration Tests — Supertest Suite', () => {
   let app: any;
@@ -24,6 +28,16 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     activeSessions.clear();
     activeWebAuthnChallenges.clear();
     setServerRecoveryConfig(TEST_MASTER_RECOVERY_KEY, 'test-rec-salt-999');
+
+    // Fixtures de prueba aisladas para credenciales (sin secretos hardcodeados en código de producción)
+    serverUserCredentials.clear();
+    for (const u of ['user-admin', 'user-manager', 'user-member', 'user-viewer', 'user-dependent']) {
+      serverUserCredentials.set(u, {
+        userId: u,
+        pinHash: hashPinSync(TEST_FIXTURE_PIN, `salt-${u}-fixture`),
+        pinSalt: `salt-${u}-fixture`,
+      });
+    }
   });
 
   describe('Health Endpoint', () => {
@@ -150,7 +164,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // Create admin session with valid PIN proof
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin', pin: '1234' });
+        .send({ userId: 'user-admin', pin: TEST_FIXTURE_PIN });
       const adminToken = sessionRes.body.token;
 
       // Trigger lockout
@@ -198,7 +212,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('authenticates user-admin when valid PIN is provided and grants true admin role', async () => {
       const res = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin', pin: '1234' });
+        .send({ userId: 'user-admin', pin: TEST_FIXTURE_PIN });
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBeDefined();
@@ -210,7 +224,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('enforces registered role when manager logs in with PIN, rejecting privilege escalation to admin', async () => {
       const res = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-manager', pin: '1234', role: 'admin' }); // Injects role: admin in body
+        .send({ userId: 'user-manager', pin: TEST_FIXTURE_PIN, role: 'admin' }); // Injects role: admin in body
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBeDefined();
@@ -222,7 +236,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // 1. Authenticate Admin
       const adminRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin', pin: '1234' });
+        .send({ userId: 'user-admin', pin: TEST_FIXTURE_PIN });
       const adminToken = adminRes.body.token;
 
       // 2. Admin provisions session for user-member
@@ -256,7 +270,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('allows admin session to view and clear audit logs', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin', pin: '1234' });
+        .send({ userId: 'user-admin', pin: TEST_FIXTURE_PIN });
 
       const token = sessionRes.body.token;
 
@@ -292,7 +306,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // Viewer
       const viewerRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-viewer', pin: '1234' });
+        .send({ userId: 'user-viewer', pin: TEST_FIXTURE_PIN });
       const viewerToken = viewerRes.body.token;
 
       const vClear = await request(app)
@@ -304,7 +318,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // Member
       const memberRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member', pin: '1234' });
+        .send({ userId: 'user-member', pin: TEST_FIXTURE_PIN });
       const memberToken = memberRes.body.token;
 
       const mClear = await request(app)
@@ -316,7 +330,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('authenticates and validates current session via /api/auth/me', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-manager', pin: '1234' });
+        .send({ userId: 'user-manager', pin: TEST_FIXTURE_PIN });
       const token = sessionRes.body.token;
 
       const meRes = await request(app)
@@ -331,7 +345,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('allows logging out and invalidates session token', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-admin', pin: '1234' });
+        .send({ userId: 'user-admin', pin: TEST_FIXTURE_PIN });
       const token = sessionRes.body.token;
 
       // Logout
@@ -353,7 +367,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       // Authenticate as member (David)
       const memberRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member', pin: '1234' });
+        .send({ userId: 'user-member', pin: TEST_FIXTURE_PIN });
       const memberToken = memberRes.body.token;
 
       // Member attempts to read Admin transaction
@@ -368,7 +382,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('prevents User A from deleting User B transactions (403 Forbidden)', async () => {
       const memberRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member', pin: '1234' });
+        .send({ userId: 'user-member', pin: TEST_FIXTURE_PIN });
       const memberToken = memberRes.body.token;
 
       // Member attempts to delete Admin transaction
@@ -383,7 +397,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('prevents User A from accessing User B accounts (403 Forbidden)', async () => {
       const memberRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member', pin: '1234' });
+        .send({ userId: 'user-member', pin: TEST_FIXTURE_PIN });
       const memberToken = memberRes.body.token;
 
       const res = await request(app)
@@ -397,7 +411,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('allows users to access their own resources', async () => {
       const memberRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member', pin: '1234' });
+        .send({ userId: 'user-member', pin: TEST_FIXTURE_PIN });
       const memberToken = memberRes.body.token;
 
       const res = await request(app)
@@ -414,7 +428,7 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
     it('binds audit actor identity strictly to authenticated session, ignoring forged body payload', async () => {
       const sessionRes = await request(app)
         .post('/api/auth/session')
-        .send({ userId: 'user-member', pin: '1234' });
+        .send({ userId: 'user-member', pin: TEST_FIXTURE_PIN });
       const memberToken = sessionRes.body.token;
 
       // Member tries to post a log alleging to be admin
@@ -635,6 +649,107 @@ describe('FinanTrack Server Security & Integration Tests — Supertest Suite', (
       } finally {
         if (origKey) process.env.GEMINI_API_KEY = origKey;
       }
+    });
+  });
+
+  describe('Real Storage SHA-256 Legacy Migration in Authentication & Recovery', () => {
+    it('migrates legacy SHA-256 user PIN to PBKDF2 in real serverUserCredentials storage during authentication', async () => {
+      const legacySalt = 'legacy-salt-777';
+      const userPin = '9381';
+      const legacyHash = crypto
+        .createHash('sha256')
+        .update(`finantrack_salt_${legacySalt}:${userPin}`)
+        .digest('hex');
+
+      serverUserRegistry.set('legacy-user-test', {
+        id: 'legacy-user-test',
+        name: 'Usuario Legado',
+        email: 'legacy@example.com',
+        role: 'member',
+        status: 'active',
+      });
+      serverUserCredentials.set('legacy-user-test', {
+        userId: 'legacy-user-test',
+        pinHash: legacyHash,
+        pinSalt: legacySalt,
+      });
+
+      // 1. Verificar estado inicial: en el almacenamiento real existe hash legacy (no pbkdf2)
+      expect(serverUserCredentials.get('legacy-user-test')!.pinHash.startsWith('pbkdf2$')).toBe(false);
+      expect(serverUserCredentials.get('legacy-user-test')!.pinHash).toBe(legacyHash);
+
+      // 2. Autenticación exitosa con PIN en /api/auth/session
+      const authRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'legacy-user-test', pin: userPin });
+
+      expect(authRes.status).toBe(200);
+      expect(authRes.body.token).toBeDefined();
+
+      // 3. Demostración de modificación del almacenamiento real: ahora almacena pbkdf2$
+      const updatedRecord = serverUserCredentials.get('legacy-user-test')!;
+      expect(updatedRecord.pinHash.startsWith('pbkdf2$')).toBe(true);
+      expect(updatedRecord.pinHash).not.toBe(legacyHash);
+
+      // 4. Intentar autenticarse pasando el hash legacy antiguo como PIN falla (401)
+      const replayRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'legacy-user-test', pin: legacyHash });
+      expect(replayRes.status).toBe(401);
+
+      // 5. Intentar autenticarse con PIN incorrecto falla (401)
+      const wrongRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'legacy-user-test', pin: '0000' });
+      expect(wrongRes.status).toBe(401);
+
+      // 6. Nueva autenticación legítima utiliza el nuevo hash PBKDF2 persistido
+      const secondAuthRes = await request(app)
+        .post('/api/auth/session')
+        .send({ userId: 'legacy-user-test', pin: userPin });
+      expect(secondAuthRes.status).toBe(200);
+      expect(secondAuthRes.body.token).toBeDefined();
+    });
+
+    it('migrates legacy SHA-256 Recovery Key to PBKDF2 in real serverRecoveryConfig storage during reset', async () => {
+      const testRecoveryKey = 'RECOVER-9X7K-2M4P-6W8Q-B5N3';
+      const normalized = testRecoveryKey.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const recSalt = 'legacy-rec-salt-555';
+      const legacyRecHash = crypto
+        .createHash('sha256')
+        .update(`finantrack_recovery_${recSalt}:${normalized}`)
+        .digest('hex');
+
+      serverRecoveryConfig.salt = recSalt;
+      serverRecoveryConfig.hash = legacyRecHash;
+
+      // 1. Verificar estado inicial: en almacenamiento real es SHA-256 legado
+      expect(serverRecoveryConfig.hash.startsWith('pbkdf2_rec$')).toBe(false);
+      expect(serverRecoveryConfig.hash).toBe(legacyRecHash);
+
+      // 2. Ejecutar restablecimiento mediante /api/auth/pin/reset
+      const resetRes = await request(app)
+        .post('/api/auth/pin/reset')
+        .send({ recoveryKey: testRecoveryKey });
+
+      expect(resetRes.status).toBe(200);
+      expect(resetRes.body.success).toBe(true);
+
+      // 3. Demostración de modificación del almacenamiento real: ahora almacena pbkdf2_rec$
+      expect(serverRecoveryConfig.hash.startsWith('pbkdf2_rec$')).toBe(true);
+      expect(serverRecoveryConfig.hash).not.toBe(legacyRecHash);
+
+      // 4. Clave incorrecta o hash crudo rechazados con 403
+      const badRes = await request(app)
+        .post('/api/auth/pin/reset')
+        .send({ recoveryKey: 'RECOVER-0000-0000-0000-0000' });
+      expect(badRes.status).toBe(403);
+
+      // 5. Restablecimiento posterior valida contra el hash PBKDF2 persistido
+      const secondReset = await request(app)
+        .post('/api/auth/pin/reset')
+        .send({ recoveryKey: testRecoveryKey });
+      expect(secondReset.status).toBe(200);
     });
   });
 });
