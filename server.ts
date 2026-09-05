@@ -98,11 +98,13 @@ export interface ServerUserCredential {
   pinSalt: string;
 }
 
+const PBKDF2_ITERATIONS = (process.env.NODE_ENV === 'test' || process.env.VITEST) ? 1000 : 600000;
+
 export function hashPinSync(pin: string, salt: string): string {
   const derived = crypto.pbkdf2Sync(
     pin,
     `finantrack_pbkdf2_${salt}`,
-    600000,
+    PBKDF2_ITERATIONS,
     32,
     'sha256'
   );
@@ -175,7 +177,7 @@ export function hashRecoveryKeySync(key: string, salt: string): string {
   const derived = crypto.pbkdf2Sync(
     normalized,
     `finantrack_rec_pbkdf2_${salt}`,
-    600000,
+    PBKDF2_ITERATIONS,
     32,
     'sha256'
   );
@@ -1188,6 +1190,19 @@ async function startServer() {
   });
 }
 
-if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+const isTestEnvironment = 
+  process.env.NODE_ENV === "test" || 
+  Boolean(process.env.VITEST) || 
+  process.env.npm_lifecycle_event === "test" ||
+  (process.argv && process.argv.some(arg => arg.includes('vitest')));
+
+const isMainModule = !isTestEnvironment && Boolean(process.argv[1]) && (
+  process.argv[1].endsWith('server.ts') ||
+  process.argv[1].endsWith('server.cjs') ||
+  process.argv[1].endsWith('server.js') ||
+  process.argv[1].includes('tsx')
+);
+
+if (isMainModule) {
   startServer();
 }

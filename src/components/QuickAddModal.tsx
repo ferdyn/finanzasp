@@ -57,8 +57,9 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
       return;
     }
 
-    const parsedAmount = parseFloat(amountStr.replace(',', '.'));
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    const normalized = amountStr.trim().replace(',', '.');
+    const parsedAmount = parseFloat(normalized);
+    if (!amountStr.trim() || isNaN(parsedAmount) || parsedAmount <= 0 || !/^\d+(\.\d{1,4})?$/.test(normalized)) {
       setError('Introduce un importe válido');
       return;
     }

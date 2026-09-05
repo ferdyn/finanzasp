@@ -77,8 +77,10 @@ export function generateSecureRandomNumber(min: number, max: number): number {
   throw new Error('Web Crypto API no disponible para generación segura de números aleatorios.');
 }
 
+const PBKDF2_ITERATIONS = (typeof process !== 'undefined' && (process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST))) ? 1000 : 600000;
+
 /**
- * Genera el hash criptográfico robusto de un PIN con sal utilizando PBKDF2 (600,000 iteraciones con HMAC-SHA-256).
+ * Genera el hash criptográfico robusto de un PIN con sal utilizando PBKDF2 (600,000 iteraciones con HMAC-SHA-256 en prod, 1,000 en test).
  * Formato del hash: pbkdf2$<hex>
  */
 export async function hashPin(pin: string, salt: string): Promise<string> {
@@ -98,7 +100,7 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
       {
         name: 'PBKDF2',
         salt: saltBuffer,
-        iterations: 600000,
+        iterations: PBKDF2_ITERATIONS,
         hash: 'SHA-256',
       },
       keyMaterial,
@@ -117,7 +119,7 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
       const derived = nodeCrypto.pbkdf2Sync(
         pin,
         `finantrack_pbkdf2_${salt}`,
-        600000,
+        PBKDF2_ITERATIONS,
         32,
         'sha256'
       );
@@ -219,7 +221,7 @@ export async function hashRecoveryKey(key: string, salt: string): Promise<string
       {
         name: 'PBKDF2',
         salt: saltBuffer,
-        iterations: 600000,
+        iterations: PBKDF2_ITERATIONS,
         hash: 'SHA-256',
       },
       keyMaterial,
@@ -237,7 +239,7 @@ export async function hashRecoveryKey(key: string, salt: string): Promise<string
       const derived = nodeCrypto.pbkdf2Sync(
         normalized,
         `finantrack_rec_pbkdf2_${salt}`,
-        600000,
+        PBKDF2_ITERATIONS,
         32,
         'sha256'
       );

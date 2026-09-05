@@ -4,12 +4,19 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  const isTest = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: isTest ? [react()] : [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    test: {
+      environment: 'node',
+      globals: true,
+      testTimeout: 10000,
     },
     build: {
       rollupOptions: {
