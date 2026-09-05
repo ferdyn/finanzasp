@@ -73,6 +73,7 @@ function MainLayout() {
 
   // Modal states
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [quickAddType, setQuickAddType] = useState<TransactionType>('expense');
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
   const [txInitialData, setTxInitialData] = useState<Partial<Transaction> | null>(null);
@@ -116,7 +117,8 @@ function MainLayout() {
   const [pinPromptCallback, setPinPromptCallback] = useState<(() => void) | null>(null);
 
   // Handlers
-  const handleOpenQuickAdd = () => {
+  const handleOpenQuickAdd = (type: TransactionType = 'expense') => {
+    setQuickAddType(type);
     setIsQuickAddOpen(true);
   };
 
@@ -253,6 +255,7 @@ function MainLayout() {
         <QuickAddModal
           isOpen={isQuickAddOpen}
           onClose={() => setIsQuickAddOpen(false)}
+          initialType={quickAddType}
           onOpenFullModal={(type, data) => {
             setTxToEdit(null);
             setTxInitialData({ type, ...data });

@@ -11,17 +11,19 @@ interface QuickAddModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenFullModal: (type: TransactionType, initialData?: any) => void;
+  initialType?: TransactionType;
 }
 
 export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   isOpen,
   onClose,
   onOpenFullModal,
+  initialType = 'expense',
 }) => {
   const { categories, accounts, currency, addTransaction, templates } = useFinance();
   const { hasPermission } = useUser();
 
-  const [type, setType] = useState<TransactionType>('expense');
+  const [type, setType] = useState<TransactionType>(initialType);
   const [amountStr, setAmountStr] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [selectedAccount, setSelectedAccount] = useState<string>(accounts[0]?.id || '');
@@ -33,15 +35,19 @@ export const QuickAddModal: React.FC<QuickAddModalProps> = ({
   // Initial category setup
   React.useEffect(() => {
     if (isOpen) {
+      if (initialType) {
+        setType(initialType);
+      }
       setAmountStr('');
       setNote('');
       setError('');
       setSelectedAccount(accounts[0]?.id || '');
       setToAccount(accounts[1]?.id || '');
-      const defaultCat = categories.find(c => c.type === (type === 'transfer' ? 'expense' : type));
+      const activeType = initialType || type;
+      const defaultCat = categories.find(c => c.type === (activeType === 'transfer' ? 'expense' : activeType));
       setSelectedCategory(defaultCat?.id || categories[0]?.id || '');
     }
-  }, [isOpen, type, categories, accounts]);
+  }, [isOpen, initialType, categories, accounts]);
 
   if (!isOpen) return null;
 
