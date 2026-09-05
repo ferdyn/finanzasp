@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { UserProvider, useUser } from './context/UserContext';
 import { FinanceProvider, useFinance } from './context/FinanceContext';
 import { SecurityProvider, useSecurity } from './context/SecurityContext';
@@ -11,17 +11,22 @@ import { TransactionsView } from './views/TransactionsView';
 import { BudgetsView } from './views/BudgetsView';
 import { NetWorthView } from './views/NetWorthView';
 import { GoalsView } from './views/GoalsView';
-import { AnalyticsView } from './views/AnalyticsView';
-import { AdvisorView } from './views/AdvisorView';
-import { SettingsView } from './views/SettingsView';
-import { ReportView } from './views/ReportView';
-import { ManualView } from './views/ManualView';
-import { AuditHistoryView } from './components/AuditHistoryView';
+import { LoadingFallback } from './components/ui/LoadingFallback';
+
+// Carga bajo demanda (Lazy Loading) de vistas y componentes pesados secundarios
+const AnalyticsView = lazy(() => import('./views/AnalyticsView').then(m => ({ default: m.AnalyticsView })));
+const AdvisorView = lazy(() => import('./views/AdvisorView').then(m => ({ default: m.AdvisorView })));
+const SettingsView = lazy(() => import('./views/SettingsView').then(m => ({ default: m.SettingsView })));
+const ReportView = lazy(() => import('./views/ReportView').then(m => ({ default: m.ReportView })));
+const ManualView = lazy(() => import('./views/ManualView').then(m => ({ default: m.ManualView })));
+const AuditHistoryView = lazy(() => import('./components/AuditHistoryView').then(m => ({ default: m.AuditHistoryView })));
+
 import { UserManagementModal } from './components/UserManagementModal';
 import { InteractiveTour } from './components/InteractiveTour';
 import { WelcomeGuideModal } from './components/WelcomeGuideModal';
 
 import { TransactionModal } from './components/TransactionModal';
+import { QuickAddModal } from './components/QuickAddModal';
 import { AccountModal } from './components/AccountModal';
 import { BudgetModal } from './components/BudgetModal';
 import { GoalModal } from './components/GoalModal';
@@ -32,7 +37,7 @@ import { MfaChallengeModal } from './components/MfaChallengeModal';
 import { SecurityPinModal } from './components/SecurityPinModal';
 import { FraudAlertData, KycVerificationData } from './types/digitalCards';
 
-import { Account, SavingsGoal, Transaction } from './types/finance';
+import { Account, SavingsGoal, Transaction, TransactionType } from './types/finance';
 import { EyeOff } from 'lucide-react';
 
 function MainLayout() {
@@ -43,14 +48,12 @@ function MainLayout() {
   // Reseteo inmediato y seguro del scroll a la parte superior al cambiar de pestaña
   const handleTabChange = (newTab: string) => {
     if (newTab === activeTab) {
-      // Si se pulsa la pestaña actualmente activa, scroll suave hacia arriba
       window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
       if (document.documentElement) document.documentElement.scrollTo({ top: 0, behavior: 'smooth' });
       if (document.body) document.body.scrollTo({ top: 0, behavior: 'smooth' });
       const mainEl = document.getElementById('main-content');
       if (mainEl) mainEl.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      // Cambio de pestaña: reseteo inmediato a la parte superior para no heredar scroll anterior
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       if (document.documentElement) document.documentElement.scrollTop = 0;
       if (document.body) document.body.scrollTop = 0;
@@ -60,7 +63,6 @@ function MainLayout() {
     }
   };
 
-  // Efecto reactivo: garantiza que cualquier cambio de pestaña restablezca el scroll en (0, 0)
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     if (document.documentElement) document.documentElement.scrollTop = 0;
@@ -70,6 +72,7 @@ function MainLayout() {
   }, [activeTab]);
 
   // Modal states
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [txToEdit, setTxToEdit] = useState<Transaction | null>(null);
   const [txInitialData, setTxInitialData] = useState<Partial<Transaction> | null>(null);
@@ -113,6 +116,10 @@ function MainLayout() {
   const [pinPromptCallback, setPinPromptCallback] = useState<(() => void) | null>(null);
 
   // Handlers
+  const handleOpenQuickAdd = () => {
+    setIsQuickAddOpen(true);
+  };
+
   const handleOpenNewTransaction = () => {
     setTxToEdit(null);
     setTxInitialData(null);
@@ -149,128 +156,111 @@ function MainLayout() {
     setIsGoalModalOpen(true);
   };
 
-  const handleTriggerFraudAlert = (data?: FraudAlertData) => {
-    if (data) setFraudAlertData(data);
-    setIsFraudModalOpen(true);
-  };
-
-  const handleTriggerMfaChallenge = (title: string, desc: string, callback: () => void) => {
-    setMfaActionDetails({ title, desc, callback });
-    setIsMfaModalOpen(true);
-  };
-
-  const handleOpenSecurityPinPrompt = (onSuccess: () => void) => {
-    if (hasPin) {
-      setPinPromptCallback(() => onSuccess);
-      setIsPinPromptOpen(true);
-    } else {
-      // Si no hay PIN configurado, permitir directamente
-      onSuccess();
-    }
+  const handleOpenCompoundModal = () => {
+    setIsCompoundModalOpen(true);
   };
 
   return (
     <TourProvider onNavigateTab={handleTabChange}>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-white transition-colors duration-200">
-        {/* Top Header */}
-        <Header
-          onOpenNewTransaction={handleOpenNewTransaction}
-          activeTab={activeTab}
-          setActiveTab={handleTabChange}
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
+        <Header 
+          activeTab={activeTab} 
+          setActiveTab={handleTabChange} 
+          onOpenNewTransaction={handleOpenQuickAdd}
           onOpenKyc={() => setIsKycModalOpen(true)}
-          onTriggerFraudAlert={() => handleTriggerFraudAlert()}
+          onTriggerFraudAlert={() => setIsFraudModalOpen(true)}
         />
 
-        {/* Main Navigation (Tabs on desktop, bottom bar on mobile) */}
-        <Navigation
-          activeTab={activeTab}
-          setActiveTab={handleTabChange}
-          onOpenNewTransaction={handleOpenNewTransaction}
+        <Navigation 
+          activeTab={activeTab} 
+          setActiveTab={handleTabChange} 
+          onOpenNewTransaction={handleOpenQuickAdd}
         />
 
-        {/* Main Content Area con padding adaptado a la barra inferior móvil y safe-area */}
-        <main 
-          id="main-content"
-          role="main"
-          className="flex-1 max-w-7xl w-full mx-auto px-3.5 sm:px-6 lg:px-8 pt-3.5 sm:pt-6 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] sm:pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] lg:pb-12 focus:outline-none"
-        >
+        <main id="main-content" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 lg:pb-12">
           {activeTab === 'resumen' && (
-            <DashboardView
-              onOpenNewTransaction={handleOpenNewTransaction}
+            <DashboardView 
+              onOpenNewTransaction={handleOpenQuickAdd}
               onEditTransaction={handleEditTransaction}
               setActiveTab={handleTabChange}
             />
           )}
 
           {activeTab === 'movimientos' && (
-            <TransactionsView
-              onOpenNewTransaction={handleOpenNewTransaction}
+            <TransactionsView 
+              onOpenNewTransaction={handleOpenQuickAdd}
               onEditTransaction={handleEditTransaction}
               onOpenNewTransactionWithData={handleOpenNewTransactionWithData}
             />
           )}
 
           {activeTab === 'presupuestos' && (
-            <BudgetsView
+            <BudgetsView 
               onOpenBudgetModal={handleOpenBudgetModal}
             />
           )}
 
           {activeTab === 'patrimonio' && (
-            <NetWorthView
+            <NetWorthView 
               onOpenAccountModal={handleOpenAccountModal}
-              onOpenNewTransaction={handleOpenNewTransaction}
-              onOpenCompoundSimulator={() => setIsCompoundModalOpen(true)}
-              onOpenSecurityPinPrompt={handleOpenSecurityPinPrompt}
+              onOpenNewTransaction={handleOpenQuickAdd}
+              onOpenCompoundSimulator={handleOpenCompoundModal}
+              onOpenSecurityPinPrompt={(onSuccess) => {
+                setPinPromptCallback(() => onSuccess);
+                setIsPinPromptOpen(true);
+              }}
             />
           )}
 
           {activeTab === 'metas' && (
-            <GoalsView
+            <GoalsView 
               onOpenGoalModal={handleOpenGoalModal}
             />
           )}
 
-          {activeTab === 'analisis' && (
-            <AnalyticsView />
-          )}
-
-          {activeTab === 'historial' && (
-            <AuditHistoryView />
-          )}
-
-          {activeTab === 'asesor' && (
-            <AdvisorView
-              onOpenNewTransactionWithData={handleOpenNewTransactionWithData}
-            />
-          )}
-
-          {activeTab === 'manual' && (
-            <ManualView
-              setActiveTab={handleTabChange}
-              onOpenNewTransaction={handleOpenNewTransaction}
-            />
-          )}
-
-          {activeTab === 'ajustes' && (
-            <SettingsView
-              onOpenCompoundSimulator={() => setIsCompoundModalOpen(true)}
-              onOpenReports={() => handleTabChange('reportes')}
-              onOpenManual={() => handleTabChange('manual')}
-              onOpenKyc={() => setIsKycModalOpen(true)}
-              onTriggerFraudAlert={() => handleTriggerFraudAlert()}
-              onTriggerMfaChallenge={(title, desc, cb) => handleTriggerMfaChallenge(title, desc, cb)}
-            />
-          )}
-
-          {activeTab === 'reportes' && (
-            <ReportView
-              onBack={() => handleTabChange('resumen')}
-            />
-          )}
+          <Suspense fallback={<LoadingFallback title="Cargando módulo..." subtitle="Preparando la vista" />}>
+            {activeTab === 'analisis' && <AnalyticsView />}
+            {activeTab === 'historial' && <AuditHistoryView />}
+            {activeTab === 'reportes' && <ReportView onBack={() => handleTabChange('resumen')} />}
+            {activeTab === 'asesor' && (
+              <AdvisorView 
+                onOpenNewTransactionWithData={handleOpenNewTransactionWithData}
+              />
+            )}
+            {activeTab === 'manual' && (
+              <ManualView 
+                setActiveTab={handleTabChange} 
+                onOpenNewTransaction={handleOpenQuickAdd}
+              />
+            )}
+            {activeTab === 'ajustes' && (
+              <SettingsView 
+                onOpenCompoundSimulator={handleOpenCompoundModal}
+                onOpenReports={() => handleTabChange('reportes')}
+                onOpenManual={() => handleTabChange('manual')}
+                onOpenKyc={() => setIsKycModalOpen(true)}
+                onTriggerFraudAlert={() => setIsFraudModalOpen(true)}
+                onTriggerMfaChallenge={(title, desc, callback) => {
+                  setMfaActionDetails({ title, desc, callback });
+                  setIsMfaModalOpen(true);
+                }}
+              />
+            )}
+          </Suspense>
         </main>
 
-        {/* Modales */}
+        {/* Quick Add Modal */}
+        <QuickAddModal
+          isOpen={isQuickAddOpen}
+          onClose={() => setIsQuickAddOpen(false)}
+          onOpenFullModal={(type, data) => {
+            setTxToEdit(null);
+            setTxInitialData({ type, ...data });
+            setIsTxModalOpen(true);
+          }}
+        />
+
+        {/* Modales Principales */}
         <TransactionModal
           isOpen={isTxModalOpen}
           onClose={() => setIsTxModalOpen(false)}
